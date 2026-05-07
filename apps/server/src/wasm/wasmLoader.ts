@@ -24,7 +24,7 @@ const WASM_PATH = join(__dirname, "..", "..", "..", "..", "packages", "solver", 
 interface WasmSolverModule {
   ccall: (
     name: string,
-    returnType: string,
+    returnType: string | null,
     argTypes: string[],
     args: unknown[]
   ) => unknown;
