@@ -26,7 +26,8 @@ let socket: TypedSocket | null = null;
 
 export function getSocket(): TypedSocket {
   if (!socket) {
-    socket = io({
+    const API_URL = import.meta.env.VITE_API_URL || undefined;
+    socket = io(API_URL, {
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 10,

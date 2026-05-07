@@ -10,7 +10,8 @@ import type {
   GroupBalances,
 } from "../types/index";
 
-const BASE_URL = "/api";
+const API_URL = import.meta.env.VITE_API_URL || "";
+const BASE_URL = `${API_URL}/api`;
 
 async function request<T>(
   url: string,
