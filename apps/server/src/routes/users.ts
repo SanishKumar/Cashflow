@@ -33,7 +33,7 @@ router.get(
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    const user = await userService.findById(req.params.id);
+    const user = await userService.findById(req.params.id as string);
     res.json({ success: true, data: user });
   })
 );
@@ -43,7 +43,7 @@ router.patch(
   "/:id",
   validate(UpdateUserSchema),
   asyncHandler(async (req, res) => {
-    const user = await userService.update(req.params.id, req.body);
+    const user = await userService.update(req.params.id as string, req.body);
     res.json({ success: true, data: user });
   })
 );
@@ -52,7 +52,7 @@ router.patch(
 router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
-    await userService.delete(req.params.id);
+    await userService.delete(req.params.id as string);
     res.json({ success: true, message: "User deleted" });
   })
 );

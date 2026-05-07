@@ -15,7 +15,7 @@ router.post(
   "/:groupId/transactions",
   validate(CreateTransactionSchema),
   asyncHandler(async (req, res) => {
-    const transaction = await transactionService.create(req.params.groupId, req.body);
+    const transaction = await transactionService.create(req.params.groupId as string, req.body);
     res.status(201).json({ success: true, data: transaction });
   })
 );
@@ -24,7 +24,7 @@ router.post(
 router.get(
   "/:groupId/transactions",
   asyncHandler(async (req, res) => {
-    const transactions = await transactionService.findByGroup(req.params.groupId);
+    const transactions = await transactionService.findByGroup(req.params.groupId as string);
     res.json({ success: true, data: transactions });
   })
 );
@@ -34,8 +34,8 @@ router.get(
   "/:groupId/transactions/:id",
   asyncHandler(async (req, res) => {
     const transaction = await transactionService.findById(
-      req.params.groupId,
-      req.params.id
+      req.params.groupId as string,
+      req.params.id as string
     );
     res.json({ success: true, data: transaction });
   })
@@ -45,7 +45,7 @@ router.get(
 router.delete(
   "/:groupId/transactions/:id",
   asyncHandler(async (req, res) => {
-    await transactionService.delete(req.params.groupId, req.params.id);
+    await transactionService.delete(req.params.groupId as string, req.params.id as string);
     res.json({ success: true, message: "Transaction deleted" });
   })
 );
@@ -54,7 +54,7 @@ router.delete(
 router.get(
   "/:groupId/settlements",
   asyncHandler(async (req, res) => {
-    const settlements = await transactionService.getSettlements(req.params.groupId);
+    const settlements = await transactionService.getSettlements(req.params.groupId as string);
     res.json({ success: true, data: settlements });
   })
 );

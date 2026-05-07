@@ -33,7 +33,7 @@ router.get(
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    const group = await groupService.findById(req.params.id);
+    const group = await groupService.findById(req.params.id as string);
     res.json({ success: true, data: group });
   })
 );
@@ -43,7 +43,7 @@ router.patch(
   "/:id",
   validate(UpdateGroupSchema),
   asyncHandler(async (req, res) => {
-    const group = await groupService.update(req.params.id, req.body);
+    const group = await groupService.update(req.params.id as string, req.body);
     res.json({ success: true, data: group });
   })
 );
@@ -52,7 +52,7 @@ router.patch(
 router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
-    await groupService.delete(req.params.id);
+    await groupService.delete(req.params.id as string);
     res.json({ success: true, message: "Group deleted" });
   })
 );
@@ -64,7 +64,7 @@ router.post(
   "/:id/members",
   validate(AddMemberSchema),
   asyncHandler(async (req, res) => {
-    const member = await groupService.addMember(req.params.id, req.body.userId);
+    const member = await groupService.addMember(req.params.id as string, req.body.userId);
     res.status(201).json({ success: true, data: member });
   })
 );
@@ -73,7 +73,7 @@ router.post(
 router.delete(
   "/:id/members/:userId",
   asyncHandler(async (req, res) => {
-    await groupService.removeMember(req.params.id, req.params.userId);
+    await groupService.removeMember(req.params.id as string, req.params.userId as string);
     res.json({ success: true, message: "Member removed from group" });
   })
 );
