@@ -1,0 +1,23 @@
+{
+  "name": "cashflow-management",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Enterprise-grade debt minimization platform using Max Heap algorithms",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=apps/server",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build:server": "npm run build --workspace=apps/server",
+    "build:web": "npm run build --workspace=apps/web",
+    "db:push": "npm run db:push --workspace=apps/server",
+    "db:migrate": "npm run db:migrate --workspace=apps/server",
+    "db:seed": "npm run db:seed --workspace=apps/server",
+    "db:studio": "npm run db:studio --workspace=apps/server"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String        @id @default(cuid())
+  name        String
+  email       String        @unique
+  avatarUrl   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  memberships GroupMember[]
+  paidBy      Transaction[] @relation("PaidBy")
+  debtShares  DebtShare[]
+
+  @@map("users")
+}
+
+model Group {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  members      GroupMember[]
+  transactions Transaction[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  id       String   @id @default(cuid())
+  userId   String
+  groupId  String
+  joinedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@index([groupId])
+  @@map("group_members")
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  groupId     String
+  paidById    String
+  amount      Float
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  group      Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidBy     User        @relation("PaidBy", fields: [paidById], references: [id])
+  debtShares DebtShare[]
+
+  @@index([groupId])
+  @@index([paidById])
+  @@map("transactions")
+}
+
+model DebtShare {
+  id            String @id @default(cuid())
+  transactionId String
+  owedById      String
+  amount        Float
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  owedBy      User        @relation(fields: [owedById], references: [id])
+
+  @@index([transactionId])
+  @@index([owedById])
+  @@map("debt_shares")
+}

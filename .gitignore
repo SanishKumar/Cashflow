@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+*.wasm
+*.js.map
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.example
+
+# Database
+prisma/migrations/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Docker
+docker-compose.override.yml
+
+# Testing
+coverage/
+
+# WASM build artifacts
+packages/solver/build/
+packages/solver/*.js
+packages/solver/*.wasm
