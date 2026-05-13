@@ -14,14 +14,10 @@
 - **Seamless Settlements**: "Settle Up" modal lets users resolve optimized debts with a single click, instantly updating all balances.
 
 ## Screenshots
-
-<div align="center">
-  <img src="docs/screenshots/dashboard.png" alt="Dashboard View" width="48%" />
-  <img src="docs/screenshots/graph.png" alt="Interactive Debt Graph" width="48%" />
-  <br />
-  <img src="docs/screenshots/ocr-modal.png" alt="WASM OCR Receipt Scanning" width="48%" />
-  <img src="docs/screenshots/ledger.png" alt="Global Ledger" width="48%" />
-</div>
+| | |
+|:---:|:---:|
+| <img src="docs/screenshots/dashboard.png" alt="Dashboard View" /> <br/> **Dashboard View** | <img src="docs/screenshots/graph.png" alt="Interactive Debt Graph" /> <br/> **Interactive Debt Graph** |
+| <img src="docs/screenshots/ocr-modal.png" alt="WASM OCR Receipt Scanning" /> <br/> **WASM OCR Receipt Scanning** | <img src="docs/screenshots/ledger.png" alt="Global Ledger" /> <br/> **Global Ledger** |
 
 ## Architecture
 
