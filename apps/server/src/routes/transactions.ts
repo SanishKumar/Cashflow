@@ -6,6 +6,7 @@ import { Router } from "express";
 import { transactionService } from "../services/transactionService.js";
 import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
+import { z } from "zod";
 import { CreateTransactionSchema } from "../types/api.js";
 
 const router = Router();
@@ -47,6 +48,20 @@ router.delete(
   asyncHandler(async (req, res) => {
     await transactionService.delete(req.params.groupId as string, req.params.id as string);
     res.json({ success: true, message: "Transaction deleted" });
+  })
+);
+
+// PATCH /api/groups/:groupId/transactions/:id/status — Update status
+router.patch(
+  "/:groupId/transactions/:id/status",
+  validate(z.object({ status: z.enum(["COMPLETED", "PENDING", "REJECTED"]) })),
+  asyncHandler(async (req, res) => {
+    const updated = await transactionService.updateStatus(
+      req.params.groupId as string,
+      req.params.id as string,
+      req.body.status
+    );
+    res.json({ success: true, data: updated });
   })
 );
 

@@ -19,6 +19,7 @@ export function GroupsPage() {
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDesc, setNewGroupDesc] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [currency, setCurrency] = useState("USD");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -37,10 +38,12 @@ export function GroupsPage() {
       await groupApi.create({
         name: newGroupName.trim(),
         description: newGroupDesc.trim() || undefined,
+        currency,
         memberIds: selectedMembers.length > 0 ? selectedMembers : undefined,
       });
       setNewGroupName("");
       setNewGroupDesc("");
+      setCurrency("USD");
       setSelectedMembers([]);
       setShowCreate(false);
       refetch();
@@ -60,7 +63,7 @@ export function GroupsPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <header className="h-14 border-b border-outline-variant/30 flex items-center px-6 justify-between shrink-0 bg-surface-container/50">
+      <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-6 pr-6 justify-between shrink-0 bg-surface-container/50">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-on-surface-variant text-[20px]">dashboard</span>
           <h2 className="text-[15px] font-semibold text-on-surface">Groups</h2>
@@ -108,6 +111,22 @@ export function GroupsPage() {
                 value={newGroupDesc}
                 onChange={(e) => setNewGroupDesc(e.target.value)}
               />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-label">Currency</label>
+              <select
+                className="input-field"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+              >
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="GBP">GBP (£)</option>
+                <option value="INR">INR (₹)</option>
+                <option value="CAD">CAD ($)</option>
+                <option value="AUD">AUD ($)</option>
+              </select>
             </div>
 
             {users && users.length > 0 && (

@@ -22,10 +22,17 @@ model User {
   @@map("users")
 }
 
+enum TransactionStatus {
+  COMPLETED
+  PENDING
+  REJECTED
+}
+
 model Group {
   id          String        @id @default(cuid())
   name        String
   description String?
+  currency    String        @default("USD")
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -53,10 +60,13 @@ model Transaction {
   id          String   @id @default(cuid())
   groupId     String
   paidById    String
-  amount      Float
-  description String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  amount           Float
+  originalCurrency String?
+  exchangeRate     Float?
+  description      String
+  status           TransactionStatus @default(COMPLETED)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   group      Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
   paidBy     User        @relation("PaidBy", fields: [paidById], references: [id])

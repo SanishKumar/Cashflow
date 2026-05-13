@@ -11,7 +11,9 @@ import { groupApi, transactionApi, settlementApi } from "../lib/api";
 import type { Group, Transaction, GroupBalances, Settlement } from "../types/index";
 import { ExpenseModal } from "../components/ExpenseModal";
 import { SettleUpModal } from "../components/SettleUpModal";
+import { DeleteGroupModal } from "../components/DeleteGroupModal";
 import { DebtGraph } from "../components/DebtGraph";
+import { useUser } from "../contexts/UserContext";
 
 type ViewMode = "ledger" | "graph";
 
@@ -19,8 +21,12 @@ function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
-function formatCurrency(amount: number): string {
-  return `$${Math.abs(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function formatCurrency(amount: number, currencyCode: string = "USD"): string {
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode }).format(amount);
+  } catch (e) {
+    return `$${amount.toFixed(2)}`;
+  }
 }
 
 export function GroupDetailPage() {
@@ -28,7 +34,9 @@ export function GroupDetailPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("ledger");
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showSettleModal, setShowSettleModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [liveSettlements, setLiveSettlements] = useState<Settlement[] | null>(null);
+  const { viewingAsId } = useUser();
 
   const { data: group, loading: groupLoading, error: groupError } = useApi<Group>(() => groupApi.get(id!), [id]);
   const { data: transactions, loading: txLoading, refetch: refetchTx } = useApi<Transaction[]>(() => transactionApi.list(id!), [id]);
@@ -53,6 +61,16 @@ export function GroupDetailPage() {
     setShowSettleModal(false);
     refetchTx();
     refetchBalances();
+  };
+
+  const handleUpdateStatus = async (txId: string, status: "COMPLETED" | "REJECTED") => {
+    try {
+      await transactionApi.updateStatus(id!, txId, status);
+      refetchTx();
+      refetchBalances();
+    } catch (err) {
+      console.error("Failed to update status", err);
+    }
   };
 
   if (groupLoading) {
@@ -88,7 +106,7 @@ export function GroupDetailPage() {
       {/* ── Center Panel ──────────────────── */}
       <section className="flex-1 h-full flex flex-col border-r border-outline-variant/30 overflow-hidden min-w-0">
         {/* Header */}
-        <header className="h-14 border-b border-outline-variant/30 flex items-center px-5 justify-between bg-surface-container/50 shrink-0">
+        <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-5 pr-5 justify-between bg-surface-container/50 shrink-0">
           <div className="flex items-center gap-3">
             <Link to="/" className="btn-ghost !p-1.5 !h-auto">
               <span className="material-symbols-outlined text-[18px]">arrow_back</span>
@@ -98,7 +116,8 @@ export function GroupDetailPage() {
               <p className="text-[11px] text-on-surface-variant">{group.members.length} members • {transactions?.length ?? 0} transactions</p>
             </div>
           </div>
-          <div className="flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5">
             <button
               onClick={() => setViewMode("ledger")}
               className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
@@ -119,13 +138,20 @@ export function GroupDetailPage() {
             >
               Graph
             </button>
+            </div>
           </div>
         </header>
 
         {viewMode === "ledger" ? (
-          <LedgerView transactions={transactions ?? []} loading={txLoading} />
+          <LedgerView 
+            transactions={transactions ?? []} 
+            loading={txLoading} 
+            viewingAsId={viewingAsId || group.members[0]?.userId || null}
+            currency={group.currency}
+            onUpdateStatus={handleUpdateStatus}
+          />
         ) : (
-          <DebtGraph settlements={currentSettlements} members={group.members} />
+          <DebtGraph settlements={currentSettlements} members={group.members} currency={group.currency} />
         )}
       </section>
 
@@ -197,12 +223,27 @@ export function GroupDetailPage() {
                     <span className="font-medium text-on-surface">{s.fromName.split(" ")[0]}</span>
                     <span className="material-symbols-outlined text-[14px] text-on-surface-variant">arrow_forward</span>
                     <span className="font-medium text-on-surface">{s.toName.split(" ")[0]}</span>
-                    <span className="ml-auto text-data text-secondary font-semibold">{formatCurrency(s.amount)}</span>
+                    <span className="ml-auto text-data text-secondary font-semibold">{formatCurrency(s.amount, group.currency)}</span>
                   </div>
                 ))}
               </div>
             </>
           )}
+
+          {/* Danger Zone */}
+          <div className="mt-4 pt-4 border-t border-error/20 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-error text-[16px]">warning</span>
+              <h3 className="text-section-title !text-error">Danger Zone</h3>
+            </div>
+            <button 
+              onClick={() => setShowDeleteModal(true)} 
+              className="btn-secondary w-full !border-error/20 !text-error hover:!bg-error hover:!text-white transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px]">delete</span>
+              Delete Group
+            </button>
+          </div>
         </div>
 
         {/* Status */}
@@ -220,13 +261,22 @@ export function GroupDetailPage() {
 
       {showExpenseModal && <ExpenseModal group={group} onClose={() => setShowExpenseModal(false)} onCreated={handleMutationDone} />}
       {showSettleModal && <SettleUpModal group={group} settlements={currentSettlements} onClose={() => setShowSettleModal(false)} onSettled={handleMutationDone} />}
+      {showDeleteModal && <DeleteGroupModal group={group} onClose={() => setShowDeleteModal(false)} />}
     </div>
   );
 }
 
 // ── Ledger View ──────────────────────────────
 
-function LedgerView({ transactions, loading }: { transactions: Transaction[]; loading: boolean }) {
+interface LedgerViewProps {
+  transactions: Transaction[];
+  loading: boolean;
+  viewingAsId: string | null;
+  currency: string;
+  onUpdateStatus: (txId: string, status: "COMPLETED" | "REJECTED") => void;
+}
+
+function LedgerView({ transactions, loading, viewingAsId, currency, onUpdateStatus }: LedgerViewProps) {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -282,10 +332,27 @@ function LedgerView({ transactions, loading }: { transactions: Transaction[]; lo
               <span className="text-[13px] text-on-surface truncate">{tx.paidBy.name}</span>
             </div>
             <div className="col-span-2 text-data text-right text-secondary font-semibold">
-              {formatCurrency(tx.amount)}
+              {formatCurrency(tx.amount, currency)}
             </div>
-            <div className="col-span-1 text-[12px] text-right text-on-surface-variant">
-              {tx.debtShares.length}
+            <div className="col-span-1 text-[12px] text-right">
+              {tx.status === "PENDING" ? (
+                tx.debtShares[0]?.owedById === viewingAsId ? (
+                  <div className="flex items-center justify-end gap-1">
+                    <button onClick={() => onUpdateStatus(tx.id, "COMPLETED")} className="btn-ghost !p-1 text-positive hover:bg-positive/10">
+                      <span className="material-symbols-outlined text-[16px]">check</span>
+                    </button>
+                    <button onClick={() => onUpdateStatus(tx.id, "REJECTED")} className="btn-ghost !p-1 text-error hover:bg-error/10">
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-warning text-[10px] font-semibold tracking-wider">PENDING</span>
+                )
+              ) : tx.status === "REJECTED" ? (
+                <span className="text-error text-[10px] font-semibold tracking-wider">REJECTED</span>
+              ) : (
+                <span className="text-on-surface-variant">{tx.debtShares.length}</span>
+              )}
             </div>
           </div>
         ))}

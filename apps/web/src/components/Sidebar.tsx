@@ -3,9 +3,11 @@
 // ──────────────────────────────────────────────
 
 import { NavLink, useNavigate, useSearchParams } from "react-router-dom";
+import { useUser } from "../contexts/UserContext";
 
 interface SidebarProps {
   syncActive?: boolean;
+  onClose?: () => void;
 }
 
 const navItems = [
@@ -14,8 +16,9 @@ const navItems = [
   { to: "/settings", icon: "tune", label: "Settings", end: false },
 ];
 
-export function Sidebar({ syncActive = false }: SidebarProps) {
+export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
   const navigate = useNavigate();
+  const { viewingAsId, setViewingAsId, users } = useUser();
   const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get("q") || "";
 
@@ -31,7 +34,7 @@ export function Sidebar({ syncActive = false }: SidebarProps) {
   return (
     <nav className="shrink-0 h-full w-[240px] bg-surface-container flex flex-col border-r border-outline-variant/50">
       {/* Brand */}
-      <div className="px-5 pt-5 pb-4">
+      <div className="px-5 pt-5 pb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-container to-[#4f46e5] flex items-center justify-center">
             <span className="material-symbols-outlined text-white text-[18px]">account_balance</span>
@@ -41,6 +44,14 @@ export function Sidebar({ syncActive = false }: SidebarProps) {
             <p className="text-[10px] text-on-surface-variant font-medium tracking-wider">v2.1 • STABLE</p>
           </div>
         </div>
+        {onClose && (
+          <button 
+            onClick={onClose}
+            className="md:hidden p-1 rounded-md text-on-surface-variant hover:bg-surface-variant transition-colors"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        )}
       </div>
 
       {/* Search */}
@@ -97,6 +108,22 @@ export function Sidebar({ syncActive = false }: SidebarProps) {
           <span className="material-symbols-outlined text-[18px]">person</span>
           Profile
         </NavLink>
+
+        {/* Global Context Switcher */}
+        {users.length > 0 && (
+          <div className="flex flex-col gap-1 px-3 py-2 mt-1 rounded-lg bg-surface-container-high border border-outline-variant/30">
+            <span className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider">Viewing As</span>
+            <select
+              className="input-field !py-1 !pl-2 !pr-6 !text-[11px] !min-h-0 !h-7 !bg-transparent border-none shadow-none focus:ring-0"
+              value={viewingAsId || ""}
+              onChange={(e) => setViewingAsId(e.target.value)}
+            >
+              {users.map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Sync Status */}
         <div className="flex items-center gap-2 px-3 py-2 mt-1 rounded-lg bg-surface-dim">

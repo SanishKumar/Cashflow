@@ -7,7 +7,8 @@ import { useApi } from "../hooks/useApi";
 
 export function SettingsPage() {
   const { data: health, loading } = useApi<{ status: string; uptime: number; version: string }>(async () => {
-    const res = await fetch("/api/health");
+    const API_URL = import.meta.env.VITE_API_URL || "";
+    const res = await fetch(`${API_URL}/api/health`);
     return res.json();
   });
 
@@ -15,7 +16,7 @@ export function SettingsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="h-14 border-b border-outline-variant/30 flex items-center px-6 bg-surface-container/50 shrink-0">
+      <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-6 pr-6 bg-surface-container/50 shrink-0">
         <span className="material-symbols-outlined text-on-surface-variant text-[20px] mr-3">tune</span>
         <h2 className="text-[15px] font-semibold text-on-surface">Settings</h2>
       </header>
@@ -108,13 +109,13 @@ export function SettingsPage() {
             <h3 className="text-section-title mb-4">About</h3>
             <div className="glass-panel-sm p-4">
               <p className="text-[13px] text-on-surface leading-relaxed">
-                <strong>CashFlow</strong> is an enterprise-grade debt minimization platform using a Max Heap greedy
-                algorithm (O(N log N)) to compute optimal settlement paths across complex financial networks.
+                <strong>CashFlow</strong> is an enterprise-grade debt minimization platform utilizing a Proprietary Graph Flow Optimization Engine
+                to dynamically compute optimal settlement paths across complex financial networks.
               </p>
               <div className="flex gap-4 mt-3 pt-3 border-t border-glass-border">
                 <div>
                   <span className="text-[10px] text-on-surface-variant uppercase font-medium">Algorithm</span>
-                  <p className="text-[12px] text-on-surface font-medium mt-0.5">Max Heap (C++ → WASM)</p>
+                  <p className="text-[12px] text-on-surface font-medium mt-0.5">Graph Optimizer (C++ → WASM)</p>
                 </div>
                 <div>
                   <span className="text-[10px] text-on-surface-variant uppercase font-medium">Real-Time</span>

@@ -14,6 +14,7 @@ export interface Group {
   id: string;
   name: string;
   description: string | null;
+  currency: string;
   createdAt: string;
   members: GroupMember[];
   _count: { transactions: number };
@@ -33,6 +34,9 @@ export interface Transaction {
   paidBy: { id: string; name: string; email: string };
   amount: number;
   description: string;
+  status: string;
+  originalCurrency?: string | null;
+  exchangeRate?: number | null;
   createdAt: string;
   debtShares: DebtShare[];
 }

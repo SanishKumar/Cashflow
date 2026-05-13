@@ -54,15 +54,37 @@ export class TransactionService {
       );
     }
 
+    let finalAmount = data.amount;
+    let finalShares = data.shares;
+    let exchangeRate: number | null = null;
+    let originalCurrency: string | null = null;
+
+    if (data.currency && data.currency !== group.currency) {
+      try {
+        const res = await fetch(`https://api.frankfurter.app/latest?amount=1&from=${data.currency}&to=${group.currency}`);
+        const json = await res.json();
+        exchangeRate = json.rates[group.currency];
+        originalCurrency = data.currency;
+        finalAmount = data.amount * exchangeRate;
+        finalShares = data.shares.map(s => ({ ...s, amount: s.amount * exchangeRate! }));
+      } catch (err) {
+        console.error("Currency conversion failed", err);
+        throw new AppError("Failed to convert currency. Please try again.", 500);
+      }
+    }
+
     // Create transaction with debt shares in a single atomic operation
     const transaction = await prisma.transaction.create({
       data: {
         groupId,
         paidById: data.paidById,
-        amount: data.amount,
+        amount: finalAmount,
+        originalCurrency,
+        exchangeRate,
+        status: (data.status as any) ?? "COMPLETED",
         description: data.description,
         debtShares: {
-          create: data.shares.map((share) => ({
+          create: finalShares.map((share) => ({
             owedById: share.owedById,
             amount: share.amount,
           })),
@@ -141,6 +163,36 @@ export class TransactionService {
   }
 
   /**
+   * Update transaction status (for settlements).
+   */
+  async updateStatus(groupId: string, transactionId: string, status: string) {
+    await this.findById(groupId, transactionId);
+
+    const updated = await prisma.transaction.update({
+      where: { id: transactionId },
+      data: { status: status as any },
+      include: {
+        paidBy: { select: { id: true, name: true, email: true } },
+        debtShares: {
+          include: {
+            owedBy: { select: { id: true, name: true, email: true } },
+          },
+        },
+      },
+    });
+
+    // Broadcast updated settlements if status changed to COMPLETED or REJECTED
+    try {
+      const settlements = await this.getSettlements(groupId);
+      broadcastToGroup(groupId, "settlements:updated", settlements.settlements);
+    } catch {
+      console.warn(`[WS] Failed to broadcast settlements:updated for group ${groupId}`);
+    }
+
+    return updated;
+  }
+
+  /**
    * Delete a transaction.
    */
   async delete(groupId: string, transactionId: string) {
@@ -163,7 +215,7 @@ export class TransactionService {
    *
    * 1. Fetch all transactions and debt shares from the DB.
    * 2. Build a list of directed debt edges.
-   * 3. Run the Max Heap solver to minimize the settlement graph.
+   * 3. Run the Graph Flow solver to minimize the settlement graph.
    * 4. Return balances + minimized settlements.
    */
   async getSettlements(groupId: string): Promise<GroupBalances> {
@@ -180,9 +232,9 @@ export class TransactionService {
       throw new NotFoundError("Group", groupId);
     }
 
-    // Fetch all transactions with shares
+    // Fetch all completed transactions with shares
     const transactions = await prisma.transaction.findMany({
-      where: { groupId },
+      where: { groupId, status: "COMPLETED" as any },
       include: {
         paidBy: { select: { id: true, name: true } },
         debtShares: {

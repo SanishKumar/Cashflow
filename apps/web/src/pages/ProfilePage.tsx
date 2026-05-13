@@ -14,7 +14,7 @@ export function ProfilePage() {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="h-14 border-b border-outline-variant/30 flex items-center px-6 bg-surface-container/50 shrink-0">
+      <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-6 pr-6 bg-surface-container/50 shrink-0">
         <span className="material-symbols-outlined text-on-surface-variant text-[20px] mr-3">person</span>
         <h2 className="text-[15px] font-semibold text-on-surface">Profile & Members</h2>
       </header>

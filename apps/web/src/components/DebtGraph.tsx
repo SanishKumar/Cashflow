@@ -22,6 +22,7 @@ import type { Settlement, GroupMember } from "../types/index";
 interface DebtGraphProps {
   settlements: Settlement[];
   members: GroupMember[];
+  currency: string;
 }
 
 function getInitials(name: string): string {
@@ -35,12 +36,15 @@ interface NodeData {
   initials: string;
   netExposure: number;
   colorIndex: number;
+  currency: string;
   [key: string]: unknown;
 }
 
 function EntityNode({ data }: NodeProps<Node<NodeData>>) {
   const isPositive = data.netExposure > 0.01;
   const isNegative = data.netExposure < -0.01;
+  
+  const formattedExposure = new Intl.NumberFormat('en-US', { style: 'currency', currency: data.currency }).format(Math.abs(data.netExposure));
 
   return (
     <div className="glass-panel p-4 w-[200px] cursor-grab active:cursor-grabbing hover:border-outline transition-colors">
@@ -62,7 +66,7 @@ function EntityNode({ data }: NodeProps<Node<NodeData>>) {
         <div className="flex justify-between items-center">
           <span className="text-[10px] text-on-surface-variant font-medium uppercase">Net</span>
           <span className={`text-data font-bold ${isPositive ? "text-positive" : isNegative ? "text-negative" : "text-neutral"}`}>
-            {isPositive ? "+" : isNegative ? "-" : ""}${Math.abs(data.netExposure).toFixed(2)}
+            {isPositive ? "+" : isNegative ? "-" : ""}{formattedExposure}
           </span>
         </div>
       </div>
@@ -83,7 +87,7 @@ function computeLayout(count: number) {
 
 // ── Main Component ─────────────────────────────
 
-export function DebtGraph({ settlements, members }: DebtGraphProps) {
+export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
   const netExposure = useMemo(() => {
     const map = new Map<string, number>();
     for (const m of members) map.set(m.userId, 0);
@@ -106,6 +110,7 @@ export function DebtGraph({ settlements, members }: DebtGraphProps) {
         initials: getInitials(m.user.name),
         netExposure: netExposure.get(m.userId) ?? 0,
         colorIndex: i,
+        currency,
       },
     })),
     [members, getPos, netExposure]
@@ -117,7 +122,7 @@ export function DebtGraph({ settlements, members }: DebtGraphProps) {
       source: s.from,
       target: s.to,
       animated: true,
-      label: `$${s.amount.toFixed(2)}`,
+      label: new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(s.amount),
       labelStyle: { fill: "#e2e4f0", fontFamily: "JetBrains Mono", fontSize: 11, fontWeight: 600 },
       labelBgStyle: { fill: "#161821", stroke: "#353849", strokeWidth: 1, rx: 6, ry: 6 },
       labelBgPadding: [8, 4] as [number, number],
@@ -171,7 +176,7 @@ export function DebtGraph({ settlements, members }: DebtGraphProps) {
         </div>
         <div>
           <div className="text-[10px] text-on-surface-variant uppercase font-medium">Total Flow</div>
-          <div className="text-data-lg text-secondary">${settlements.reduce((s, x) => s + x.amount, 0).toFixed(2)}</div>
+          <div className="text-data-lg text-secondary">{new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(settlements.reduce((s, x) => s + x.amount, 0))}</div>
         </div>
         <div>
           <div className="text-[10px] text-on-surface-variant uppercase font-medium">Nodes</div>

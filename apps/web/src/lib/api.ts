@@ -53,7 +53,7 @@ export const userApi = {
 export const groupApi = {
   list: () => request<Group[]>("/groups"),
   get: (id: string) => request<Group>(`/groups/${id}`),
-  create: (data: { name: string; description?: string; memberIds?: string[] }) =>
+  create: (data: { name: string; description?: string; memberIds?: string[], currency?: string }) =>
     request<Group>("/groups", {
       method: "POST",
       body: JSON.stringify(data),
@@ -87,6 +87,8 @@ export const transactionApi = {
       paidById: string;
       amount: number;
       description: string;
+      currency?: string;
+      status?: "COMPLETED" | "PENDING" | "REJECTED";
       shares: { owedById: string; amount: number }[];
     }
   ) =>
@@ -96,6 +98,11 @@ export const transactionApi = {
     }),
   delete: (groupId: string, id: string) =>
     request<void>(`/groups/${groupId}/transactions/${id}`, { method: "DELETE" }),
+  updateStatus: (groupId: string, id: string, status: "COMPLETED" | "PENDING" | "REJECTED") =>
+    request<Transaction>(`/groups/${groupId}/transactions/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
 };
 
 // ── Settlement API ─────────────────────────

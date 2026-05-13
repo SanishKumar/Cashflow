@@ -33,6 +33,7 @@ export function SettleUpModal({ group, settlements, onClose, onSettled }: Settle
         paidById: settlement.from,
         amount: settlement.amount,
         description: `Settlement: ${settlement.fromName} → ${settlement.toName}`,
+        status: "PENDING",
         shares: [{ owedById: settlement.to, amount: settlement.amount }],
       });
       setSettledIndices((prev) => new Set(prev).add(index));

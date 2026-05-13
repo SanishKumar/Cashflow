@@ -2,7 +2,8 @@
 // Expense Entry Modal — v2.1 Fixed & Modernized
 // ──────────────────────────────────────────────
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
+import Tesseract from "tesseract.js";
 import { transactionApi } from "../lib/api";
 import type { Group } from "../types/index";
 
@@ -21,6 +22,7 @@ function getInitials(name: string): string {
 export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
   const [description, setDescription] = useState("");
   const [paidById, setPaidById] = useState(group.members[0]?.userId ?? "");
+  const [currency, setCurrency] = useState(group.currency || "USD");
   const [amount, setAmount] = useState("");
   const [splitMode, setSplitMode] = useState<SplitMode>("equal");
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(
@@ -29,6 +31,8 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
   const [exactAmounts, setExactAmounts] = useState<Map<string, string>>(new Map());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parsedAmount = parseFloat(amount) || 0;
 
@@ -37,12 +41,19 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
     if (memberArr.length === 0) return [];
 
     if (splitMode === "equal") {
-      const perPerson = parsedAmount / memberArr.length;
-      return memberArr.map((m) => ({
+      const perPerson = Math.round((parsedAmount / memberArr.length) * 100) / 100;
+      const result = memberArr.map((m) => ({
         owedById: m.userId,
-        amount: Math.round(perPerson * 100) / 100,
+        amount: perPerson,
         name: m.user.name,
       }));
+      
+      const currentTotal = result.reduce((sum, s) => sum + s.amount, 0);
+      const diff = Math.round((parsedAmount - currentTotal) * 100) / 100;
+      if (diff !== 0 && result.length > 0) {
+        result[0].amount = Math.round((result[0].amount + diff) * 100) / 100;
+      }
+      return result;
     }
 
     return memberArr.map((m) => ({
@@ -86,6 +97,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
       await transactionApi.create(group.id, {
         paidById,
         amount: parsedAmount,
+        currency,
         description: description.trim(),
         shares: shares.map((s) => ({ owedById: s.owedById, amount: s.amount })),
       });
@@ -94,6 +106,32 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
       setError(err instanceof Error ? err.message : "Failed to create expense");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setScanning(true);
+    setError(null);
+    try {
+      const { data: { text } } = await Tesseract.recognize(file, 'eng');
+      
+      const matches = text.match(/\$?\s*\d+\.\d{2}/g);
+      if (matches && matches.length > 0) {
+        const amounts = matches.map((m: string) => parseFloat(m.replace(/[^0-9.]/g, '')));
+        const maxAmount = Math.max(...amounts);
+        setAmount(maxAmount.toFixed(2));
+        setDescription("Scanned Receipt");
+      } else {
+        setError("Could not extract a valid price from the receipt.");
+      }
+    } catch (err) {
+      setError("Failed to scan receipt. Please enter details manually.");
+    } finally {
+      setScanning(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -128,6 +166,44 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
             </div>
           )}
 
+          {/* Drag & Drop OCR Zone */}
+          <div 
+            className={`relative w-full shrink-0 min-h-[120px] border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center transition-colors cursor-pointer overflow-hidden ${
+              scanning 
+                ? "border-primary/50 bg-glow-primary" 
+                : "border-outline-variant/50 hover:border-primary/50 hover:bg-surface-variant/30"
+            }`}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const file = e.dataTransfer.files?.[0];
+              if (file) handleScan({ target: { files: [file] } } as any);
+            }}
+          >
+            {scanning ? (
+              <>
+                <span className="material-symbols-outlined text-[32px] text-primary animate-spin mb-2">sync</span>
+                <p className="text-[13px] font-medium text-primary">Analyzing receipt via Tesseract.js...</p>
+                <div className="absolute bottom-0 left-0 h-1 bg-primary animate-[progress-bar_2s_ease-in-out_infinite] w-full" />
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[32px] text-on-surface-variant mb-2">document_scanner</span>
+                <p className="text-[13px] font-medium text-on-surface">Drag & Drop receipt image</p>
+                <p className="text-[11px] text-on-surface-variant mt-1">or click to browse</p>
+              </>
+            )}
+            <input 
+              type="file" 
+              accept="image/*" 
+              ref={fileInputRef} 
+              className="hidden" 
+              onChange={handleScan} 
+            />
+          </div>
+
           {/* Description */}
           <div className="flex flex-col gap-1.5">
             <label className="text-label">What's this for?</label>
@@ -140,12 +216,14 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
             />
           </div>
 
-          {/* Amount + Paid By */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Amount + Currency + Paid By */}
+          <div className="grid grid-cols-[1fr_auto_1fr] gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-label">Amount</label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-[14px] font-medium">$</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-[14px] font-medium">
+                  {new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(0).replace(/\d|\.|\,/g, '').trim()}
+                </span>
                 <input
                   className="input-field input-field-mono !pl-8"
                   type="number"
@@ -156,6 +234,21 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
                   onChange={(e) => setAmount(e.target.value)}
                 />
               </div>
+            </div>
+            <div className="flex flex-col gap-1.5 w-24">
+              <label className="text-label">Currency</label>
+              <select
+                className="input-field"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+              >
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="CAD">CAD</option>
+                <option value="AUD">AUD</option>
+                <option value="INR">INR</option>
+              </select>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-label">Paid by</label>

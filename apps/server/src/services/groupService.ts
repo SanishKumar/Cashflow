@@ -15,6 +15,7 @@ export class GroupService {
       data: {
         name: data.name,
         description: data.description,
+        currency: data.currency ?? "USD",
         members: data.memberIds
           ? {
               create: data.memberIds.map((userId) => ({

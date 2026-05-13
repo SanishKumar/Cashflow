@@ -22,6 +22,7 @@ export const CreateGroupSchema = z.object({
   name: z.string().min(1, "Group name is required").max(100),
   description: z.string().max(500).optional(),
   memberIds: z.array(z.string()).optional(),
+  currency: z.string().length(3).optional(),
 });
 
 export const UpdateGroupSchema = z.object({
@@ -45,6 +46,8 @@ export const CreateTransactionSchema = z.object({
       })
     )
     .min(1, "At least one debt share is required"),
+  currency: z.string().length(3).optional(),
+  status: z.enum(["COMPLETED", "PENDING", "REJECTED"]).optional(),
 });
 
 // ── TypeScript Types (derived from Zod) ────────
@@ -125,6 +128,9 @@ export interface TransactionWithShares {
   paidBy: { id: string; name: string; email: string };
   amount: number;
   description: string;
+  status: string;
+  originalCurrency?: string | null;
+  exchangeRate?: number | null;
   createdAt: Date;
   debtShares: {
     id: string;
@@ -138,6 +144,7 @@ export interface GroupWithMembers {
   id: string;
   name: string;
   description: string | null;
+  currency: string;
   createdAt: Date;
   members: {
     id: string;

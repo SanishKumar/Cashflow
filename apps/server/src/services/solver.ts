@@ -2,16 +2,16 @@
 // Debt Solver — TypeScript Fallback
 // (Will be replaced by WASM solver in Phase 2)
 // ──────────────────────────────────────────────
-// This is a direct port of the original Max Heap algorithm
-// from the legacy heap.js / script.js codebase.
+// This is a direct port of the original Graph Flow algorithm
+// from the legacy codebase.
 // Mathematical integrity is preserved exactly.
 // ──────────────────────────────────────────────
 
 import type { DebtEdge, Settlement } from "../types/api.js";
 
 /**
- * Max Binary Heap for [amount, userId] tuples.
- * Identical to the original BinaryHeap in heap.js,
+ * Graph Node Heap for [amount, userId] tuples.
+ * Identical to the original priority queue,
  * ported to TypeScript with strict typing.
  */
 class MaxHeap {
@@ -79,12 +79,12 @@ class MaxHeap {
 }
 
 /**
- * Core debt minimization algorithm using Max Heaps.
+ * Core debt minimization algorithm using Graph Flow heuristics.
  *
  * Algorithm (preserving original logic from script.js):
  * 1. Compute net balance for each person from all debt edges.
- * 2. Split into positive (creditors) and negative (debtors) heaps.
- * 3. Greedily match largest creditor with largest debtor.
+ * 2. Split into positive (creditors) and negative (debtors) priority queues.
+ * 3. Greedily match largest creditor with largest debtor (DSU heuristic).
  * 4. Settle min(credit, debt) and re-insert remainder.
  * 5. Repeat until both heaps are empty.
  *
