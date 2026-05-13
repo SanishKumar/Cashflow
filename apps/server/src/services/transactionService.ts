@@ -62,10 +62,10 @@ export class TransactionService {
     if (data.currency && data.currency !== group.currency) {
       try {
         const res = await fetch(`https://api.frankfurter.app/latest?amount=1&from=${data.currency}&to=${group.currency}`);
-        const json = await res.json();
+        const json = await res.json() as any;
         exchangeRate = json.rates[group.currency];
         originalCurrency = data.currency;
-        finalAmount = data.amount * exchangeRate;
+        finalAmount = data.amount * exchangeRate!;
         finalShares = data.shares.map(s => ({ ...s, amount: s.amount * exchangeRate! }));
       } catch (err) {
         console.error("Currency conversion failed", err);

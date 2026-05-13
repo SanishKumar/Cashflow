@@ -39,9 +39,23 @@ async function main() {
     // Initialize WASM solver (falls back to TS if unavailable)
     await initSolver();
 
-    // Verify database connection
-    await prisma.$connect();
-    console.log("[DB] PostgreSQL connected successfully.");
+    // Verify database connection with retry for Neon cold starts
+    let retries = 5;
+    while (retries > 0) {
+      try {
+        await prisma.$connect();
+        console.log("[DB] PostgreSQL connected successfully.");
+        break;
+      } catch (err: any) {
+        if (err.errorCode === 'P1001' && retries > 1) {
+          console.warn(`[DB] Neon cold start timeout (P1001), retrying... (${retries - 1} attempts left)`);
+          await new Promise(res => setTimeout(res, 4000));
+          retries--;
+        } else {
+          throw err;
+        }
+      }
+    }
 
     httpServer.listen(PORT, () => {
       console.log(`
