@@ -1,52 +1,80 @@
 // ──────────────────────────────────────────────
-// Group Service — Data Access Layer
+// Group Service — Data Access Layer with RBAC
 // ──────────────────────────────────────────────
 
 import prisma from "../lib/prisma.js";
 import type { CreateGroupInput, UpdateGroupInput } from "../types/api.js";
-import { NotFoundError, ConflictError } from "../middleware/errorHandler.js";
+import { NotFoundError, ConflictError, AppError } from "../middleware/errorHandler.js";
+import { auditLogService } from "./auditLogService.js";
+
+const GROUP_INCLUDE = {
+  members: {
+    include: {
+      user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+    },
+    orderBy: { joinedAt: "asc" as const },
+  },
+  _count: { select: { transactions: true } },
+};
 
 export class GroupService {
   /**
-   * Create a new group, optionally with initial members.
+   * Create a new group. The requesting user is auto-assigned ADMIN.
    */
-  async create(data: CreateGroupInput) {
-    return prisma.group.create({
+  async create(data: CreateGroupInput, requestingUserId?: string) {
+    const memberCreates: { userId: string; role: "ADMIN" | "MEMBER" }[] = [];
+
+    // The creator is always ADMIN
+    if (requestingUserId) {
+      memberCreates.push({ userId: requestingUserId, role: "ADMIN" });
+    }
+
+    // Additional members are MEMBER
+    if (data.memberIds) {
+      for (const uid of data.memberIds) {
+        if (uid !== requestingUserId) {
+          memberCreates.push({ userId: uid, role: "MEMBER" });
+        }
+      }
+    }
+
+    const group = await prisma.group.create({
       data: {
         name: data.name,
         description: data.description,
         currency: data.currency ?? "USD",
-        members: data.memberIds
-          ? {
-              create: data.memberIds.map((userId) => ({
-                userId,
-              })),
-            }
+        members: memberCreates.length > 0
+          ? { create: memberCreates }
           : undefined,
       },
-      include: {
-        members: {
-          include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
-        },
-        _count: { select: { transactions: true } },
-      },
+      include: GROUP_INCLUDE,
     });
+
+    // Audit log
+    if (requestingUserId) {
+      await auditLogService.log({
+        userId: requestingUserId,
+        groupId: group.id,
+        action: "GROUP_CREATED",
+        details: `Created group "${data.name}"`,
+      });
+    }
+
+    return group;
   }
 
   /**
-   * Get all groups with member counts.
+   * Get all groups — scoped to the requesting user's memberships.
    */
-  async findAll() {
+  async findAll(requestingUserId?: string) {
+    const where = requestingUserId
+      ? { members: { some: { userId: requestingUserId } } }
+      : {};
+
     return prisma.group.findMany({
+      where,
       orderBy: { createdAt: "desc" },
-      include: {
-        members: {
-          include: {
-            user: { select: { id: true, name: true, email: true, avatarUrl: true } },
-          },
-        },
-        _count: { select: { transactions: true } },
-      },
+      include: GROUP_INCLUDE,
     });
   }
 
@@ -56,15 +84,7 @@ export class GroupService {
   async findById(id: string) {
     const group = await prisma.group.findUnique({
       where: { id },
-      include: {
-        members: {
-          include: {
-            user: { select: { id: true, name: true, email: true, avatarUrl: true } },
-          },
-          orderBy: { joinedAt: "asc" },
-        },
-        _count: { select: { transactions: true } },
-      },
+      include: GROUP_INCLUDE,
     });
 
     if (!group) {
@@ -75,30 +95,29 @@ export class GroupService {
   }
 
   /**
-   * Update a group by ID.
+   * Update a group by ID. Requires ADMIN role.
    */
-  async update(id: string, data: UpdateGroupInput) {
-    await this.findById(id);
+  async update(id: string, data: UpdateGroupInput, requestingUserId?: string) {
+    if (requestingUserId) {
+      await this.requireRole(id, requestingUserId, "ADMIN");
+    }
 
     return prisma.group.update({
       where: { id },
       data,
-      include: {
-        members: {
-          include: {
-            user: { select: { id: true, name: true, email: true, avatarUrl: true } },
-          },
-        },
-        _count: { select: { transactions: true } },
-      },
+      include: GROUP_INCLUDE,
     });
   }
 
   /**
-   * Add a member to a group.
+   * Add a member to a group. Requires ADMIN role.
    */
-  async addMember(groupId: string, userId: string) {
+  async addMember(groupId: string, userId: string, requestingUserId?: string) {
     await this.findById(groupId);
+
+    if (requestingUserId) {
+      await this.requireRole(groupId, requestingUserId, "ADMIN");
+    }
 
     // Check if user exists
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -114,18 +133,30 @@ export class GroupService {
       throw new ConflictError(`User '${userId}' is already a member of group '${groupId}'`);
     }
 
-    return prisma.groupMember.create({
-      data: { userId, groupId },
+    const member = await prisma.groupMember.create({
+      data: { userId, groupId, role: "MEMBER" },
       include: {
         user: { select: { id: true, name: true, email: true, avatarUrl: true } },
       },
     });
+
+    // Audit log
+    if (requestingUserId) {
+      await auditLogService.log({
+        userId: requestingUserId,
+        groupId,
+        action: "MEMBER_ADDED",
+        details: `Added ${user.name} to the group`,
+      });
+    }
+
+    return member;
   }
 
   /**
-   * Remove a member from a group.
+   * Remove a member from a group. ADMIN can remove anyone; members can leave themselves.
    */
-  async removeMember(groupId: string, userId: string) {
+  async removeMember(groupId: string, userId: string, requestingUserId?: string) {
     const membership = await prisma.groupMember.findUnique({
       where: { userId_groupId: { userId, groupId } },
     });
@@ -134,17 +165,79 @@ export class GroupService {
       throw new NotFoundError("Group membership");
     }
 
-    return prisma.groupMember.delete({
+    // If not self-leave, require ADMIN
+    if (requestingUserId && requestingUserId !== userId) {
+      await this.requireRole(groupId, requestingUserId, "ADMIN");
+    }
+
+    const result = await prisma.groupMember.delete({
       where: { id: membership.id },
     });
+
+    // Audit log
+    if (requestingUserId) {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      await auditLogService.log({
+        userId: requestingUserId,
+        groupId,
+        action: requestingUserId === userId ? "MEMBER_LEFT" : "MEMBER_REMOVED",
+        details: requestingUserId === userId
+          ? `Left the group`
+          : `Removed ${user?.name ?? userId} from the group`,
+      });
+    }
+
+    return result;
   }
 
   /**
-   * Delete a group by ID.
+   * Delete a group by ID. Requires ADMIN role.
    */
-  async delete(id: string) {
-    await this.findById(id);
+  async delete(id: string, requestingUserId?: string) {
+    const group = await this.findById(id);
+
+    if (requestingUserId) {
+      await this.requireRole(id, requestingUserId, "ADMIN");
+    }
+
+    // Audit log before deletion
+    if (requestingUserId) {
+      await auditLogService.log({
+        userId: requestingUserId,
+        groupId: null,
+        action: "GROUP_DELETED",
+        details: `Deleted group "${group.name}"`,
+      });
+    }
+
     return prisma.group.delete({ where: { id } });
+  }
+
+  /**
+   * Verify a user has the required role in a group.
+   */
+  private async requireRole(groupId: string, userId: string, requiredRole: "ADMIN" | "MEMBER") {
+    const membership = await prisma.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+    });
+
+    if (!membership) {
+      throw new AppError("You are not a member of this group", 403);
+    }
+
+    if (requiredRole === "ADMIN" && membership.role !== "ADMIN") {
+      throw new AppError("Admin access required for this action", 403);
+    }
+  }
+
+  /**
+   * Get the role of a user in a group.
+   */
+  async getUserRole(groupId: string, userId: string): Promise<string | null> {
+    const membership = await prisma.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+    });
+    return membership?.role ?? null;
   }
 }
 

@@ -1,4 +1,9 @@
+// ──────────────────────────────────────────────
+// User Context — Singular Identity Management
+// ──────────────────────────────────────────────
+
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 
 interface User {
   id: string;
@@ -8,32 +13,58 @@ interface User {
 }
 
 interface UserContextType {
-  viewingAsId: string | null;
-  setViewingAsId: (id: string | null) => void;
-  users: User[];
+  currentUser: User | null;
+  currentUserId: string | null;
+  loading: boolean;
+  login: (userId: string) => void;
+  logout: () => void;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [viewingAsId, setViewingAsId] = useState<string | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(
+    () => localStorage.getItem("currentUserId")
+  );
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!currentUserId) {
+      setLoading(false);
+      return;
+    }
+
+    // Fetch the current user's profile
     import("../lib/api").then(({ userApi }) => {
-      userApi.list()
-        .then(users => {
-          if (users && users.length > 0) {
-            setUsers(users);
-            setViewingAsId(users[0].id);
-          }
+      userApi.get(currentUserId)
+        .then(user => {
+          setCurrentUser(user);
+          setLoading(false);
         })
-        .catch(console.error);
+        .catch(() => {
+          // Invalid userId in localStorage — clear it
+          localStorage.removeItem("currentUserId");
+          setCurrentUserId(null);
+          setCurrentUser(null);
+          setLoading(false);
+        });
     });
-  }, []);
+  }, [currentUserId]);
+
+  const login = (userId: string) => {
+    localStorage.setItem("currentUserId", userId);
+    setCurrentUserId(userId);
+  };
+
+  const logout = () => {
+    localStorage.removeItem("currentUserId");
+    setCurrentUserId(null);
+    setCurrentUser(null);
+  };
 
   return (
-    <UserContext.Provider value={{ viewingAsId, setViewingAsId, users }}>
+    <UserContext.Provider value={{ currentUser, currentUserId, loading, login, logout }}>
       {children}
     </UserContext.Provider>
   );

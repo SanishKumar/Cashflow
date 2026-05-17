@@ -1,5 +1,5 @@
 // ──────────────────────────────────────────────
-// API Client
+// API Client — Identity-Aware
 // ──────────────────────────────────────────────
 
 import type {
@@ -8,10 +8,16 @@ import type {
   Group,
   Transaction,
   GroupBalances,
+  AuditLogEntry,
 } from "../types/index";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const BASE_URL = `${API_URL}/api`;
+
+function getAuthHeaders(): Record<string, string> {
+  const userId = localStorage.getItem("currentUserId");
+  return userId ? { "X-User-Id": userId } : {};
+}
 
 async function request<T>(
   url: string,
@@ -20,6 +26,7 @@ async function request<T>(
   const response = await fetch(`${BASE_URL}${url}`, {
     headers: {
       "Content-Type": "application/json",
+      ...getAuthHeaders(),
       ...options.headers,
     },
     ...options,
@@ -110,4 +117,12 @@ export const transactionApi = {
 export const settlementApi = {
   get: (groupId: string) =>
     request<GroupBalances>(`/groups/${groupId}/settlements`),
+};
+
+// ── Audit Log API ──────────────────────────
+
+export const auditLogApi = {
+  list: () => request<AuditLogEntry[]>("/audit-logs"),
+  listByGroup: (groupId: string) =>
+    request<AuditLogEntry[]>(`/audit-logs/group/${groupId}`),
 };

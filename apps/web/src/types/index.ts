@@ -23,6 +23,7 @@ export interface Group {
 export interface GroupMember {
   id: string;
   userId: string;
+  role: "ADMIN" | "MEMBER";
   joinedAt: string;
   user: { id: string; name: string; email: string; avatarUrl: string | null };
 }
@@ -68,9 +69,21 @@ export interface GroupBalances {
   settlements: Settlement[];
 }
 
+export interface AuditLogEntry {
+  id: string;
+  userId: string;
+  groupId: string | null;
+  action: string;
+  details: string | null;
+  createdAt: string;
+  user: { id: string; name: string; email: string; avatarUrl: string | null };
+  group?: { id: string; name: string } | null;
+}
+
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
   message?: string;
 }
+

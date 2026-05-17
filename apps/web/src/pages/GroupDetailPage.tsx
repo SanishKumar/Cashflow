@@ -36,11 +36,15 @@ export function GroupDetailPage() {
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [liveSettlements, setLiveSettlements] = useState<Settlement[] | null>(null);
-  const { viewingAsId } = useUser();
+  const { currentUserId } = useUser();
 
   const { data: group, loading: groupLoading, error: groupError } = useApi<Group>(() => groupApi.get(id!), [id]);
   const { data: transactions, loading: txLoading, refetch: refetchTx } = useApi<Transaction[]>(() => transactionApi.list(id!), [id]);
   const { data: balances, refetch: refetchBalances } = useApi<GroupBalances>(() => settlementApi.get(id!), [id]);
+
+  // Determine the current user's role in this group
+  const myMembership = group ? group.members.find(m => m.userId === currentUserId) : null;
+  const isAdmin = myMembership?.role === "ADMIN";
 
   const handleSettlementsUpdate = useCallback(
     (newSettlements: Settlement[]) => {
@@ -146,7 +150,7 @@ export function GroupDetailPage() {
           <LedgerView 
             transactions={transactions ?? []} 
             loading={txLoading} 
-            viewingAsId={viewingAsId || group.members[0]?.userId || null}
+            currentUserId={currentUserId}
             currency={group.currency}
             onUpdateStatus={handleUpdateStatus}
           />
@@ -230,20 +234,22 @@ export function GroupDetailPage() {
             </>
           )}
 
-          {/* Danger Zone */}
-          <div className="mt-4 pt-4 border-t border-error/20 flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-error text-[16px]">warning</span>
-              <h3 className="text-section-title !text-error">Danger Zone</h3>
+          {/* Danger Zone — Admin Only */}
+          {isAdmin && (
+            <div className="mt-4 pt-4 border-t border-error/20 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-error text-[16px]">warning</span>
+                <h3 className="text-section-title !text-error">Danger Zone</h3>
+              </div>
+              <button 
+                onClick={() => setShowDeleteModal(true)} 
+                className="btn-secondary w-full !border-error/20 !text-error hover:!bg-error hover:!text-white transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px]">delete</span>
+                Delete Group
+              </button>
             </div>
-            <button 
-              onClick={() => setShowDeleteModal(true)} 
-              className="btn-secondary w-full !border-error/20 !text-error hover:!bg-error hover:!text-white transition-colors"
-            >
-              <span className="material-symbols-outlined text-[16px]">delete</span>
-              Delete Group
-            </button>
-          </div>
+          )}
         </div>
 
         {/* Status */}
@@ -271,12 +277,12 @@ export function GroupDetailPage() {
 interface LedgerViewProps {
   transactions: Transaction[];
   loading: boolean;
-  viewingAsId: string | null;
+  currentUserId: string | null;
   currency: string;
   onUpdateStatus: (txId: string, status: "COMPLETED" | "REJECTED") => void;
 }
 
-function LedgerView({ transactions, loading, viewingAsId, currency, onUpdateStatus }: LedgerViewProps) {
+function LedgerView({ transactions, loading, currentUserId, currency, onUpdateStatus }: LedgerViewProps) {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -336,7 +342,7 @@ function LedgerView({ transactions, loading, viewingAsId, currency, onUpdateStat
             </div>
             <div className="col-span-1 text-[12px] text-right">
               {tx.status === "PENDING" ? (
-                tx.debtShares[0]?.owedById === viewingAsId ? (
+                tx.debtShares[0]?.owedById === currentUserId ? (
                   <div className="flex items-center justify-end gap-1">
                     <button onClick={() => onUpdateStatus(tx.id, "COMPLETED")} className="btn-ghost !p-1 text-positive hover:bg-positive/10">
                       <span className="material-symbols-outlined text-[16px]">check</span>

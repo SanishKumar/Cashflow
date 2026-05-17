@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { groupApi, userApi } from "../lib/api";
+import { useUser } from "../contexts/UserContext";
 import type { Group } from "../types/index";
 
 function getInitials(name: string): string {
@@ -13,6 +14,7 @@ function getInitials(name: string): string {
 }
 
 export function GroupsPage() {
+  const { currentUserId } = useUser();
   const { data: groups, loading, error, refetch } = useApi<Group[]>(() => groupApi.list());
   const { data: users } = useApi(() => userApi.list());
   const [showCreate, setShowCreate] = useState(false);
@@ -200,7 +202,7 @@ export function GroupsPage() {
         {!loading && !error && filteredGroups && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-fade-in">
             {filteredGroups.map((group, idx) => (
-              <GroupCard key={group.id} group={group} index={idx} />
+              <GroupCard key={group.id} group={group} index={idx} currentUserId={currentUserId} />
             ))}
             {filteredGroups.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-24 gap-4">
@@ -222,14 +224,26 @@ export function GroupsPage() {
   );
 }
 
-function GroupCard({ group, index }: { group: Group; index: number }) {
+function GroupCard({ group, index, currentUserId }: { group: Group; index: number; currentUserId: string | null }) {
+  const myMembership = group.members.find(m => m.userId === currentUserId);
+  const myRole = myMembership?.role ?? "MEMBER";
+
   return (
     <Link to={`/groups/${group.id}`} className="card-interactive p-5 flex flex-col gap-3 cursor-pointer group">
       <div className="flex justify-between items-start">
         <div className="flex-1 min-w-0">
-          <h3 className="text-[14px] font-semibold text-on-surface group-hover:text-primary transition-colors truncate">
-            {group.name}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-[14px] font-semibold text-on-surface group-hover:text-primary transition-colors truncate">
+              {group.name}
+            </h3>
+            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+              myRole === "ADMIN"
+                ? "bg-primary/15 text-primary border border-primary/30"
+                : "bg-surface-variant text-on-surface-variant"
+            }`}>
+              {myRole}
+            </span>
+          </div>
           {group.description && (
             <p className="text-[12px] text-on-surface-variant mt-0.5 line-clamp-1">{group.description}</p>
           )}

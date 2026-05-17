@@ -18,6 +18,7 @@ model User {
   memberships GroupMember[]
   paidBy      Transaction[] @relation("PaidBy")
   debtShares  DebtShare[]
+  auditLogs   AuditLog[]
 
   @@map("users")
 }
@@ -26,6 +27,11 @@ enum TransactionStatus {
   COMPLETED
   PENDING
   REJECTED
+}
+
+enum GroupRole {
+  ADMIN
+  MEMBER
 }
 
 model Group {
@@ -38,15 +44,17 @@ model Group {
 
   members      GroupMember[]
   transactions Transaction[]
+  auditLogs    AuditLog[]
 
   @@map("groups")
 }
 
 model GroupMember {
-  id       String   @id @default(cuid())
+  id       String    @id @default(cuid())
   userId   String
   groupId  String
-  joinedAt DateTime @default(now())
+  role     GroupRole  @default(MEMBER)
+  joinedAt DateTime  @default(now())
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -89,4 +97,21 @@ model DebtShare {
   @@index([transactionId])
   @@index([owedById])
   @@map("debt_shares")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  groupId   String?
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

@@ -1,15 +1,20 @@
 // ──────────────────────────────────────────────
-// Transaction Routes
+// Transaction Routes — Identity-Aware
 // ──────────────────────────────────────────────
 
 import { Router } from "express";
 import { transactionService } from "../services/transactionService.js";
+import { auditLogService } from "../services/auditLogService.js";
 import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
+import { requireIdentity } from "../middleware/identity.js";
 import { z } from "zod";
 import { CreateTransactionSchema } from "../types/api.js";
 
 const router = Router();
+
+// All transaction routes require identity
+router.use(requireIdentity);
 
 // POST /api/groups/:groupId/transactions — Create a new transaction
 router.post(
@@ -17,6 +22,15 @@ router.post(
   validate(CreateTransactionSchema),
   asyncHandler(async (req, res) => {
     const transaction = await transactionService.create(req.params.groupId as string, req.body);
+
+    // Audit log
+    await auditLogService.log({
+      userId: req.userId!,
+      groupId: req.params.groupId as string,
+      action: "EXPENSE_ADDED",
+      details: `Added expense "${req.body.description}" for ${req.body.amount}`,
+    });
+
     res.status(201).json({ success: true, data: transaction });
   })
 );
@@ -47,6 +61,15 @@ router.delete(
   "/:groupId/transactions/:id",
   asyncHandler(async (req, res) => {
     await transactionService.delete(req.params.groupId as string, req.params.id as string);
+
+    // Audit log
+    await auditLogService.log({
+      userId: req.userId!,
+      groupId: req.params.groupId as string,
+      action: "EXPENSE_DELETED",
+      details: `Deleted transaction ${req.params.id}`,
+    });
+
     res.json({ success: true, message: "Transaction deleted" });
   })
 );
@@ -61,6 +84,15 @@ router.patch(
       req.params.id as string,
       req.body.status
     );
+
+    // Audit log
+    await auditLogService.log({
+      userId: req.userId!,
+      groupId: req.params.groupId as string,
+      action: `TRANSACTION_${req.body.status}`,
+      details: `Marked transaction as ${req.body.status.toLowerCase()}`,
+    });
+
     res.json({ success: true, data: updated });
   })
 );

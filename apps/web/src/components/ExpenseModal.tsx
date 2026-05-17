@@ -5,6 +5,7 @@
 import { useState, useMemo, useRef } from "react";
 import Tesseract from "tesseract.js";
 import { transactionApi } from "../lib/api";
+import { useUser } from "../contexts/UserContext";
 import type { Group } from "../types/index";
 
 interface ExpenseModalProps {
@@ -20,8 +21,9 @@ function getInitials(name: string): string {
 }
 
 export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
+  const { currentUserId } = useUser();
   const [description, setDescription] = useState("");
-  const [paidById, setPaidById] = useState(group.members[0]?.userId ?? "");
+  const [paidById, setPaidById] = useState(currentUserId || (group.members[0]?.userId ?? ""));
   const [currency, setCurrency] = useState(group.currency || "USD");
   const [amount, setAmount] = useState("");
   const [splitMode, setSplitMode] = useState<SplitMode>("equal");

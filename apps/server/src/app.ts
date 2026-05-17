@@ -10,6 +10,7 @@ import morgan from "morgan";
 import userRoutes from "./routes/users.js";
 import groupRoutes from "./routes/groups.js";
 import transactionRoutes from "./routes/transactions.js";
+import auditLogRoutes from "./routes/auditLogs.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -33,16 +34,18 @@ app.get("/api/health", (_req, res) => {
       status: "healthy",
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      version: "2.0.0",
+      version: "2.1.0",
     },
   });
 });
 
 // ── API Routes ─────────────────────────────────
+// User routes remain public (needed for login picker)
 app.use("/api/users", userRoutes);
+// Group & transaction routes have identity middleware applied internally
 app.use("/api/groups", groupRoutes);
-// Transaction routes are nested under /api/groups/:groupId
 app.use("/api/groups", transactionRoutes);
+app.use("/api/audit-logs", auditLogRoutes);
 
 // ── 404 Handler ────────────────────────────────
 app.use((_req, res) => {
