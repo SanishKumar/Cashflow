@@ -3,7 +3,6 @@
 // ──────────────────────────────────────────────
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
 
 interface User {
   id: string;
