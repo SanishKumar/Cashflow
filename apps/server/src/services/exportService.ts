@@ -11,15 +11,7 @@ import prisma from "../lib/prisma.js";
 import { NotFoundError } from "../lib/errors.js";
 import { transactionService } from "./transactionService.js";
 
-interface TransactionRow {
-  date: string;
-  description: string;
-  paidBy: string;
-  amount: number;
-  currency: string;
-  status: string;
-  shares: string;
-}
+// Removed unused TransactionRow interface
 
 /**
  * Escape a CSV field — handles commas, quotes, and newlines.
@@ -89,12 +81,13 @@ export class ExportService {
         members: {
           include: { user: { select: { name: true } } },
         },
+        _count: { select: { transactions: true } }
       },
-    });
+    }) as any;
     if (!group) throw new NotFoundError("Group", groupId);
 
     // Get settlement data from the transaction service
-    const balances = await transactionService.getGroupBalances(groupId);
+    const balances = await transactionService.getSettlements(groupId);
 
     return new Promise((resolve, reject) => {
       try {
@@ -156,7 +149,7 @@ export class ExportService {
           .fontSize(11)
           .font("Helvetica")
           .text(`Total Members: ${group.members.length}`)
-          .text(`Total Transactions: ${balances.transactionCount ?? "N/A"}`)
+          .text(`Total Transactions: ${group?._count?.transactions ?? "N/A"}`)
           .text(`Optimized Settlements: ${balances.settlements.length}`)
           .moveDown(1);
 
@@ -169,16 +162,16 @@ export class ExportService {
             .moveDown(0.5);
 
           for (const balance of balances.balances) {
-            const amtStr = balance.amount >= 0
-              ? `+${balance.amount.toFixed(2)}`
-              : balance.amount.toFixed(2);
-            const color = balance.amount >= 0 ? "#22c55e" : "#ef4444";
+            const amtStr = balance.netBalance >= 0
+              ? `+${balance.netBalance.toFixed(2)}`
+              : balance.netBalance.toFixed(2);
+            const color = balance.netBalance >= 0 ? "#22c55e" : "#ef4444";
 
             doc
               .fontSize(11)
               .font("Helvetica")
               .fillColor("#000000")
-              .text(`${balance.userName}:  `, { continued: true })
+              .text(`${balance.name}:  `, { continued: true })
               .fillColor(color)
               .text(`${group.currency} ${amtStr}`)
               .fillColor("#000000");
@@ -233,7 +226,7 @@ export class ExportService {
 
           // Table rows
           doc.fontSize(10).font("Helvetica");
-          balances.settlements.forEach((s, i) => {
+          balances.settlements.forEach((s: any, i: number) => {
             const y = doc.y;
             xPos = 50;
             const row = [
