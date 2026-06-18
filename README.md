@@ -7,13 +7,15 @@
 ## Key Features
 
 - **Real-Time Debt Minimization**: Automatically calculates the most efficient settlement paths using a C++ WASM solver.
+- **Enterprise-Grade Security**: Stateless JWT Authentication paired with PostgreSQL-backed session tracking, providing immediate token revocation.
+- **Role-Based Access Control (RBAC)**: Fine-grained permissions featuring `ADMIN`, `MEMBER`, and read-only `AUDITOR` roles.
+- **Production Hardened**: Distributed Upstash Redis rate limiters, structured JSON logging, and cursor-based pagination for high-throughput endpoints.
+- **Immutable Audit Trails**: Paginated, verifiable logs tracking all critical group actions (expenses, role changes, settlements).
+- **Data Export Pipeline**: One-click generation of PDF summary reports and CSV ledgers via `pdfkit` and `csv-stringify`.
 - **Glassmorphic UI**: Premium, modern interface built with Tailwind CSS v4, featuring micro-animations and responsive layouts.
 - **Interactive Graphs**: Visualizes the flow of debts using React Flow with real-time WebSockets synchronization.
 - **WASM OCR Receipt Scanning**: Drag-and-drop receipt scanning powered by client-side Tesseract.js.
 - **Multi-Currency Support**: Real-time dynamic exchange rate conversion via Frankfurter API.
-- **Global Identity Context**: Seamlessly switch "Viewing As" identity across the entire application with global state management.
-- **Global Ledger**: Aggregates all transactions across all groups in a unified, sortable view.
-- **Seamless Settlements**: "Settle Up" modal lets users resolve optimized debts with a single click, instantly updating all balances.
 
 ## Screenshots
 | | |
@@ -27,14 +29,21 @@
 graph TD
     subgraph Client["Client Tier (React + Vite)"]
         UI["Tailwind CSS v4\nGlassmorphic UI"]
-        OCR["Tesseract.js\nWASM OCR"]
         WS_C["Socket.io Client"]
         Graph["React Flow\nInteractive Network"]
+    end
+
+    subgraph Security["Security & Routing Tier"]
+        Rate["Redis Rate Limiter\n(express-rate-limit)"]
+        Auth["Stateless JWT +\nPostgres Sessions"]
+        RBAC["Role-Based Access Control"]
     end
 
     subgraph Server["API Tier (Express + Node.js)"]
         API["REST API\nExpress Router"]
         WS_S["Socket.io Server"]
+        Audit["Structured Audit Logger"]
+        Export["Export Service\n(CSV + PDF)"]
         Solver["C++ WASM\nGraph Flow Solver"]
         Cur["Frankfurter API\nCurrency Converter"]
     end
@@ -42,29 +51,37 @@ graph TD
     subgraph Data["Data Tier"]
         DB[(Neon PostgreSQL\nServerless DB)]
         ORM["Prisma ORM"]
-        Redis[("Upstash Redis\nPub/Sub")]
+        Redis[("Upstash Redis\nPub/Sub & Limit Store")]
     end
 
     %% Connections
-    UI <--> |REST/JSON| API
-    OCR -.-> |Extracts| UI
+    UI <--> |Requests| Rate
+    Rate --> Security
+    Security --> API
+    
     Graph <--> |Live Sync| WS_C
     WS_C <--> |WebSockets| WS_S
     
     API <--> |Queries| ORM
+    Audit -.-> |Logs| ORM
+    
     WS_S <--> |Broadcasts| Redis
+    Rate <--> |Limits| Redis
     
     API --> |Currency Swap| Cur
     API <--> |Data Prep| Solver
+    API --> |Generates| Export
     
     ORM <--> |Connection Pool| DB
     
     classDef default fill:#1e1e2e,stroke:#89b4fa,stroke-width:2px,color:#cdd6f4;
     classDef database fill:#181825,stroke:#f38ba8,stroke-width:2px,color:#cdd6f4;
+    classDef security fill:#313244,stroke:#f38ba8,stroke-width:2px,color:#cdd6f4;
     classDef algorithm fill:#313244,stroke:#a6e3a1,stroke-width:2px,color:#cdd6f4;
     
     class DB,Redis database;
-    class Solver,OCR algorithm;
+    class Rate,Auth,RBAC security;
+    class Solver algorithm;
 ```
 
 ## Tech Stack
@@ -149,12 +166,19 @@ Highly optimized for large-scale enterprise data — handles dense networks of 1
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/health` | Server health check |
+| GET | `/api/health` | Server health check (DB ping included) |
+| POST | `/api/auth/register` | Register user (Rate limited) |
+| POST | `/api/auth/login` | Login & receive JWT |
+| POST | `/api/auth/logout` | Revoke DB Session |
 | POST/GET | `/api/users` | User CRUD |
-| POST/GET | `/api/groups` | Group CRUD |
-| POST/DELETE | `/api/groups/:id/members` | Member management |
-| POST/GET | `/api/groups/:id/transactions` | Transaction CRUD |
+| POST/GET | `/api/groups` | Group CRUD (Cursor paginated) |
+| POST/DELETE | `/api/groups/:id/members` | Member management (ADMIN only) |
+| PATCH | `/api/groups/:id/members/:userId/role` | Change member role |
+| POST/GET | `/api/groups/:id/transactions` | Transaction CRUD (Paginated) |
 | GET | `/api/groups/:id/settlements` | Compute minimized debts |
+| GET | `/api/groups/:id/exports/csv` | Download CSV Ledger |
+| GET | `/api/groups/:id/exports/pdf` | Download PDF Summary |
+| GET | `/api/audit-logs` | Global immutable audit logs |
 
 ## Project Structure
 
