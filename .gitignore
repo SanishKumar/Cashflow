@@ -43,3 +43,6 @@ coverage/
 packages/solver/build/
 packages/solver/*.js
 packages/solver/*.wasm
+
+# Emscripten SDK
+emsdk/
