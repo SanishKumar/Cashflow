@@ -88,25 +88,38 @@ async function setupRedisAdapter(server: TypedServer): Promise<void> {
   const pubClient = new Redis(redisUrl, connectionOptions);
   const subClient = pubClient.duplicate();
 
+  // Wait for initial connection only. Once connected, runtime errors
+  // are logged but don't crash the process. The subscriber mode error
+  // from ioredis readyCheck is a known issue with Upstash — harmless.
   await Promise.all([
     new Promise<void>((resolve, reject) => {
+      let connected = false;
       pubClient.on("connect", () => {
+        connected = true;
         console.log("[REDIS] Pub client connected.");
         resolve();
       });
       pubClient.on("error", (err) => {
-        console.error("[REDIS] Pub client error:", err.message);
-        reject(err);
+        if (!connected) {
+          reject(err);
+        } else {
+          console.warn("[REDIS] Pub client runtime error:", err.message);
+        }
       });
     }),
     new Promise<void>((resolve, reject) => {
+      let connected = false;
       subClient.on("connect", () => {
+        connected = true;
         console.log("[REDIS] Sub client connected.");
         resolve();
       });
       subClient.on("error", (err) => {
-        console.error("[REDIS] Sub client error:", err.message);
-        reject(err);
+        if (!connected) {
+          reject(err);
+        } else {
+          console.warn("[REDIS] Sub client runtime error:", err.message);
+        }
       });
     }),
   ]);

@@ -21,7 +21,6 @@ import {
   ConflictError,
   InvalidTokenError,
   TokenExpiredError,
-  AuthenticationError,
   AppError,
 } from "../lib/errors.js";
 
