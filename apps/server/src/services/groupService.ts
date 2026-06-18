@@ -66,7 +66,7 @@ export class GroupService {
   /**
    * Get all groups — scoped to the requesting user's memberships.
    */
-  async findAll(requestingUserId?: string) {
+  async findAll(requestingUserId?: string, page: number = 1, limit: number = 50) {
     const where = requestingUserId
       ? { members: { some: { userId: requestingUserId } } }
       : {};
@@ -74,6 +74,8 @@ export class GroupService {
     return prisma.group.findMany({
       where,
       orderBy: { createdAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit,
       include: GROUP_INCLUDE,
     });
   }

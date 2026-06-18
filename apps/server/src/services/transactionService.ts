@@ -118,7 +118,7 @@ export class TransactionService {
   /**
    * Get all transactions for a group with full details.
    */
-  async findByGroup(groupId: string) {
+  async findByGroup(groupId: string, page: number = 1, limit: number = 50) {
     // Validate group exists
     const group = await prisma.group.findUnique({ where: { id: groupId } });
     if (!group) {
@@ -128,6 +128,8 @@ export class TransactionService {
     return prisma.transaction.findMany({
       where: { groupId },
       orderBy: { createdAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit,
       include: {
         paidBy: { select: { id: true, name: true, email: true } },
         debtShares: {

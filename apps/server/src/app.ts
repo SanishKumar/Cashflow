@@ -16,7 +16,10 @@ import userRoutes from "./routes/users.js";
 import groupRoutes from "./routes/groups.js";
 import transactionRoutes from "./routes/transactions.js";
 import auditLogRoutes from "./routes/auditLogs.js";
+import exportRoutes from "./routes/exports.js";
+import { apiLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import prisma from "./lib/prisma.js";
 
 const app = express();
 
@@ -29,20 +32,49 @@ app.use(
   })
 );
 app.use(express.json({ limit: "10mb" }));
-app.use(morgan("dev"));
+// Structured JSON logging for production/staging, dev otherwise
+if (process.env.NODE_ENV === "production") {
+  app.use(
+    morgan((tokens, req, res) => {
+      return JSON.stringify({
+        method: tokens.method(req, res),
+        url: tokens.url(req, res),
+        status: Number(tokens.status(req, res)),
+        content_length: tokens.res(req, res, "content-length"),
+        response_time: Number(tokens["response-time"](req, res)),
+        remote_addr: tokens["remote-addr"](req, res),
+        timestamp: new Date().toISOString(),
+      });
+    })
+  );
+} else {
+  app.use(morgan("dev"));
+}
 
 // Health Check (public)
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", async (_req, res) => {
+  let dbStatus = "unknown";
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = "connected";
+  } catch (err) {
+    dbStatus = "disconnected";
+  }
+
   res.json({
     success: true,
     data: {
       status: "healthy",
+      database: dbStatus,
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       version: "3.0.0",
     },
   });
 });
+
+// Apply rate limiting to all API routes
+app.use("/api/", apiLimiter);
 
 // Auth routes (public — no token required)
 app.use("/api/auth", authRoutes);
@@ -52,6 +84,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/groups", transactionRoutes);
 app.use("/api/audit-logs", auditLogRoutes);
+app.use("/api/groups/:groupId/export", exportRoutes);
 
 // 404 Handler
 app.use((_req, res) => {

@@ -25,11 +25,15 @@ router.post(
   })
 );
 
-// GET /api/groups — List groups (scoped to user's memberships)
+// GET /api/groups
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const groups = await groupService.findAll(req.userId!);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    const groups = await groupService.findAll(req.userId!, page, limit);
+
     res.json({ success: true, data: groups });
   })
 );

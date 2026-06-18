@@ -39,7 +39,14 @@ router.post(
 router.get(
   "/:groupId/transactions",
   asyncHandler(async (req, res) => {
-    const transactions = await transactionService.findByGroup(req.params.groupId as string);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    const transactions = await transactionService.findByGroup(
+      req.params.groupId as string,
+      page,
+      limit
+    );
     res.json({ success: true, data: transactions });
   })
 );

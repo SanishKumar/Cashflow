@@ -136,7 +136,14 @@ The debt minimization utilizes an **Optimized Directed Graph Minimization Engine
 4. Settle optimized paths and dynamically re-evaluate the graph for non-linear cycles.
 5. Produces optimal **O(N-1)** minimum-edge settlement paths.
 
-Performance: Highly optimized for large-scale enterprise data — handles 10,000+ entities in <1ms.
+Performance Benchmarks (Ops/sec on standard hardware):
+- **10 users (14 edges):** ~291,000 ops/sec
+- **50 users (497 edges):** ~19,500 ops/sec
+- **100 users (2011 edges):** ~5,600 ops/sec
+- **500 users (49k edges):** ~220 ops/sec
+- **1000 users (199k edges):** ~53 ops/sec
+
+Highly optimized for large-scale enterprise data — handles dense networks of 1,000 entities in <20ms.
 
 ## API Endpoints
 

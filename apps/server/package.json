@@ -20,11 +20,13 @@
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.5.2",
     "helmet": "^8.1.0",
     "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
     "pdfkit": "^0.19.1",
+    "rate-limit-redis": "^5.0.0",
     "socket.io": "^4.8.0",
     "zod": "^3.24.0"
   },

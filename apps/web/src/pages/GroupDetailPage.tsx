@@ -7,15 +7,17 @@ import { useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSocket } from "../hooks/useSocket";
-import { groupApi, transactionApi, settlementApi } from "../lib/api";
+import { groupApi, transactionApi, settlementApi, exportApi } from "../lib/api";
 import type { Group, Transaction, GroupBalances, Settlement } from "../types/index";
 import { ExpenseModal } from "../components/ExpenseModal";
 import { SettleUpModal } from "../components/SettleUpModal";
 import { DeleteGroupModal } from "../components/DeleteGroupModal";
 import { DebtGraph } from "../components/DebtGraph";
+import { RoleManager } from "../components/RoleManager";
+import { AuditLogViewer } from "../components/AuditLogViewer";
 import { useUser } from "../contexts/UserContext";
 
-type ViewMode = "ledger" | "graph";
+type ViewMode = "ledger" | "graph" | "settings";
 
 function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -38,7 +40,7 @@ export function GroupDetailPage() {
   const [liveSettlements, setLiveSettlements] = useState<Settlement[] | null>(null);
   const { currentUserId } = useUser();
 
-  const { data: group, loading: groupLoading, error: groupError } = useApi<Group>(() => groupApi.get(id!), [id]);
+  const { data: group, loading: groupLoading, error: groupError, refetch: refetchGroup } = useApi<Group>(() => groupApi.get(id!), [id]);
   const { data: transactions, loading: txLoading, refetch: refetchTx } = useApi<Transaction[]>(() => transactionApi.list(id!), [id]);
   const { data: balances, refetch: refetchBalances } = useApi<GroupBalances>(() => settlementApi.get(id!), [id]);
 
@@ -142,6 +144,16 @@ export function GroupDetailPage() {
             >
               Graph
             </button>
+            <button
+              onClick={() => setViewMode("settings")}
+              className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
+                viewMode === "settings"
+                  ? "bg-surface-container-high text-on-surface shadow-sm"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              Settings
+            </button>
             </div>
           </div>
         </header>
@@ -154,8 +166,20 @@ export function GroupDetailPage() {
             currency={group.currency}
             onUpdateStatus={handleUpdateStatus}
           />
-        ) : (
+        ) : viewMode === "graph" ? (
           <DebtGraph settlements={currentSettlements} members={group.members} currency={group.currency} />
+        ) : (
+          <div className="flex-1 overflow-y-auto p-6 max-w-3xl mx-auto w-full space-y-8 animate-fade-in">
+            <section>
+              <h3 className="text-[16px] font-bold text-on-surface mb-4">Member Roles</h3>
+              <RoleManager group={group} currentUserId={currentUserId} onRoleChanged={refetchGroup} />
+            </section>
+            
+            <section>
+              <h3 className="text-[16px] font-bold text-on-surface mb-4">Activity Log</h3>
+              <AuditLogViewer groupId={group.id} />
+            </section>
+          </div>
         )}
       </section>
 
@@ -171,6 +195,16 @@ export function GroupDetailPage() {
             <span className="material-symbols-outlined text-[16px]">handshake</span>
             Settle Up
           </button>
+          <div className="flex gap-2">
+            <button onClick={() => exportApi.downloadPdf(id!)} className="btn-secondary flex-1 !text-[11px] !px-1">
+              <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
+              PDF Report
+            </button>
+            <button onClick={() => exportApi.downloadCsv(id!)} className="btn-secondary flex-1 !text-[11px] !px-1">
+              <span className="material-symbols-outlined text-[14px]">table_chart</span>
+              CSV Ledger
+            </button>
+          </div>
         </div>
 
         {/* Balances */}

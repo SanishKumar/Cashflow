@@ -15,6 +15,7 @@ import { validate } from "../middleware/validate.js";
 import { requireAuth } from "../middleware/auth.js";
 import { authService } from "../services/authService.js";
 import { auditLogService } from "../services/auditLogService.js";
+import { authLimiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
@@ -43,6 +44,7 @@ const LogoutSchema = z.object({
 // POST /api/auth/register
 router.post(
   "/register",
+  authLimiter,
   validate(RegisterSchema),
   async (req, res, next) => {
     try {
@@ -79,6 +81,7 @@ router.post(
 // POST /api/auth/login
 router.post(
   "/login",
+  authLimiter,
   validate(LoginSchema),
   async (req, res, next) => {
     try {

@@ -295,3 +295,43 @@ export const auditLogApi = {
     );
   },
 };
+
+// Export API
+export const exportApi = {
+  downloadCsv: async (groupId: string, filename: string = "ledger.csv") => {
+    const headers: Record<string, string> = {};
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+
+    const response = await fetch(`${BASE_URL}/groups/${groupId}/export/csv`, { headers });
+    if (!response.ok) throw new Error("Failed to export CSV");
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  downloadPdf: async (groupId: string, filename: string = "settlements.pdf") => {
+    const headers: Record<string, string> = {};
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+
+    const response = await fetch(`${BASE_URL}/groups/${groupId}/export/pdf`, { headers });
+    if (!response.ok) throw new Error("Failed to export PDF");
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+};
+

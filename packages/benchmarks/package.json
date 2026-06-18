@@ -1,0 +1,18 @@
+{
+  "name": "@cashflow/benchmarks",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "tsx run.ts",
+    "generate": "tsx generate.ts"
+  },
+  "dependencies": {
+    "@cashflow/solver": "file:../solver",
+    "benchmark": "^2.1.4"
+  },
+  "devDependencies": {
+    "@types/benchmark": "^2.1.5",
+    "tsx": "^4.7.1",
+    "typescript": "^5.4.2"
+  }
+}
