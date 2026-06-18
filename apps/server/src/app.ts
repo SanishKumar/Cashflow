@@ -23,6 +23,9 @@ import prisma from "./lib/prisma.js";
 
 const app = express();
 
+// Trust the reverse proxy (e.g. Render) to accurately resolve X-Forwarded-For IP addresses
+app.set("trust proxy", 1);
+
 // Security & Parsing Middleware
 app.use(helmet());
 app.use(
