@@ -64,7 +64,7 @@ export function LedgerPage() {
     [groupIds.join(",")]
   );
 
-  const { data: auditLogs, loading: auditLoading } = useApi<AuditLogEntry[]>(
+  const { data: auditData, loading: auditLoading } = useApi<{ items: AuditLogEntry[]; total: number; page: number; totalPages: number; }>(
     () => auditLogApi.list()
   );
 
@@ -141,7 +141,7 @@ export function LedgerPage() {
         {tab === "transactions" ? (
           <TransactionsView transactions={allTransactions} loading={isLoading} />
         ) : (
-          <AuditLogView logs={auditLogs ?? []} loading={auditLoading} />
+          <AuditLogView logs={auditData?.items ?? []} loading={auditLoading} />
         )}
       </div>
     </div>

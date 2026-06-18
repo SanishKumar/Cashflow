@@ -23,7 +23,7 @@ export interface Group {
 export interface GroupMember {
   id: string;
   userId: string;
-  role: "ADMIN" | "MEMBER";
+  role: "ADMIN" | "MEMBER" | "AUDITOR";
   joinedAt: string;
   user: { id: string; name: string; email: string; avatarUrl: string | null };
 }
