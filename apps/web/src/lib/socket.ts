@@ -1,9 +1,13 @@
-// ──────────────────────────────────────────────
-// Socket.io Client
-// ──────────────────────────────────────────────
+/**
+ * Socket.io Client — JWT-Authenticated
+ *
+ * Establishes a WebSocket connection with the server,
+ * passing the JWT access token for authentication.
+ */
 
 import { io, Socket } from "socket.io-client";
 import type { Settlement, Transaction } from "../types/index";
+import { getAccessToken } from "./api";
 
 interface ServerToClientEvents {
   "transaction:created": (data: {
@@ -33,6 +37,9 @@ export function getSocket(): TypedSocket {
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+      auth: {
+        token: getAccessToken(),
+      },
     }) as TypedSocket;
 
     socket.on("connect", () => {

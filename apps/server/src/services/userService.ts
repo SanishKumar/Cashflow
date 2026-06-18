@@ -1,53 +1,43 @@
-// ──────────────────────────────────────────────
-// User Service — Data Access Layer
-// ──────────────────────────────────────────────
+/**
+ * User Service — Data Access Layer
+ *
+ * Handles user CRUD operations. All queries explicitly exclude
+ * the passwordHash field to prevent accidental leakage.
+ */
 
 import prisma from "../lib/prisma.js";
-import type { CreateUserInput, UpdateUserInput } from "../types/api.js";
-import { NotFoundError, ConflictError } from "../middleware/errorHandler.js";
+import type { UpdateUserInput } from "../types/api.js";
+import { NotFoundError } from "../lib/errors.js";
+
+// Safe user fields — never include passwordHash in responses
+const SAFE_USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  avatarUrl: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 export class UserService {
   /**
-   * Create a new user.
-   */
-  async create(data: CreateUserInput) {
-    const existing = await prisma.user.findUnique({ where: { email: data.email } });
-    if (existing) {
-      throw new ConflictError(`User with email '${data.email}' already exists`);
-    }
-
-    return prisma.user.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        avatarUrl: data.avatarUrl,
-      },
-    });
-  }
-
-  /**
-   * Get all users.
+   * Get all users (safe fields only).
    */
   async findAll() {
     return prisma.user.findMany({
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        avatarUrl: true,
-        createdAt: true,
-      },
+      select: SAFE_USER_SELECT,
     });
   }
 
   /**
-   * Get a user by ID.
+   * Get a user by ID with their group memberships.
    */
   async findById(id: string) {
     const user = await prisma.user.findUnique({
       where: { id },
-      include: {
+      select: {
+        ...SAFE_USER_SELECT,
         memberships: {
           include: {
             group: {
@@ -74,6 +64,7 @@ export class UserService {
     return prisma.user.update({
       where: { id },
       data,
+      select: SAFE_USER_SELECT,
     });
   }
 

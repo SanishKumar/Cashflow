@@ -6,13 +6,14 @@ import { Router } from "express";
 import { groupService } from "../services/groupService.js";
 import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
-import { requireIdentity } from "../middleware/identity.js";
+import { requireAuth } from "../middleware/auth.js";
 import { CreateGroupSchema, UpdateGroupSchema, AddMemberSchema } from "../types/api.js";
+import { z } from "zod";
 
 const router = Router();
 
 // All group routes require identity
-router.use(requireIdentity);
+router.use(requireAuth);
 
 // POST /api/groups — Create a new group (creator becomes ADMIN)
 router.post(
@@ -79,6 +80,21 @@ router.delete(
   asyncHandler(async (req, res) => {
     await groupService.removeMember(req.params.id as string, req.params.userId as string, req.userId!);
     res.json({ success: true, message: "Member removed from group" });
+  })
+);
+
+// PATCH /api/groups/:id/members/:userId/role — Change member role (ADMIN only)
+router.patch(
+  "/:id/members/:userId/role",
+  validate(z.object({ role: z.enum(["ADMIN", "MEMBER", "AUDITOR"]) })),
+  asyncHandler(async (req, res) => {
+    const updated = await groupService.changeRole(
+      req.params.id as string,
+      req.params.userId as string,
+      req.body.role,
+      req.userId!
+    );
+    res.json({ success: true, data: updated });
   })
 );
 

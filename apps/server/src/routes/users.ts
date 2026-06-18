@@ -1,26 +1,23 @@
-// ──────────────────────────────────────────────
-// User Routes
-// ──────────────────────────────────────────────
+/**
+ * User Routes — Protected
+ *
+ * User management endpoints. Listing and reading users is protected
+ * by auth. User creation now goes through /api/auth/register instead.
+ */
 
 import { Router } from "express";
 import { userService } from "../services/userService.js";
 import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
-import { CreateUserSchema, UpdateUserSchema } from "../types/api.js";
+import { requireAuth } from "../middleware/auth.js";
+import { UpdateUserSchema } from "../types/api.js";
 
 const router = Router();
 
-// POST /api/users — Create a new user
-router.post(
-  "/",
-  validate(CreateUserSchema),
-  asyncHandler(async (req, res) => {
-    const user = await userService.create(req.body);
-    res.status(201).json({ success: true, data: user });
-  })
-);
+// All user routes require auth
+router.use(requireAuth);
 
-// GET /api/users — List all users
+// GET /api/users — List all users (for member picker, etc.)
 router.get(
   "/",
   asyncHandler(async (_req, res) => {
@@ -38,7 +35,7 @@ router.get(
   })
 );
 
-// PATCH /api/users/:id — Update a user
+// PATCH /api/users/:id — Update a user (only self or admin in future)
 router.patch(
   "/:id",
   validate(UpdateUserSchema),

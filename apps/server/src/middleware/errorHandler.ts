@@ -1,47 +1,21 @@
-// ──────────────────────────────────────────────
-// Global Error Handler Middleware
-// ──────────────────────────────────────────────
+/**
+ * Global Error Handler Middleware
+ *
+ * Catches all unhandled errors in route handlers and sends structured
+ * JSON responses. Supports the typed error hierarchy from lib/errors.ts
+ * while maintaining backward compatibility with inline error classes.
+ */
 
 import type { Request, Response, NextFunction } from "express";
+import { AppError, ValidationError, RateLimitError } from "../lib/errors.js";
 
-/**
- * Custom application error with HTTP status code.
- */
-export class AppError extends Error {
-  public readonly statusCode: number;
-  public readonly isOperational: boolean;
-
-  constructor(message: string, statusCode: number, isOperational = true) {
-    super(message);
-    this.statusCode = statusCode;
-    this.isOperational = isOperational;
-    Object.setPrototypeOf(this, AppError.prototype);
-  }
-}
-
-/**
- * Not Found error — 404
- */
-export class NotFoundError extends AppError {
-  constructor(resource: string, id?: string) {
-    const msg = id ? `${resource} with id '${id}' not found` : `${resource} not found`;
-    super(msg, 404);
-  }
-}
-
-/**
- * Conflict error — 409
- */
-export class ConflictError extends AppError {
-  constructor(message: string) {
-    super(message, 409);
-  }
-}
+// Re-export error classes for backward compatibility with existing code
+// that imports from this file. New code should import from lib/errors.ts.
+export { AppError, NotFoundError, ConflictError, ValidationError } from "../lib/errors.js";
 
 /**
  * Global async error handler.
  * Catches all unhandled errors in route handlers and sends structured JSON responses.
- * Never crashes the server on bad input.
  */
 export function errorHandler(
   err: Error,
@@ -49,13 +23,40 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
-  console.error(`[ERROR] ${err.message}`, err.stack);
+  // Structured error logging
+  const timestamp = new Date().toISOString();
+  const errCode = (err as any).code || "UNKNOWN";
+  const statusCode = (err as any).statusCode || 500;
+  console.error(
+    JSON.stringify({
+      level: "error",
+      timestamp,
+      code: errCode,
+      status: statusCode,
+      message: err.message,
+      stack: process.env.NODE_ENV !== "production" ? err.stack : undefined,
+    })
+  );
 
+  // Handle our typed errors
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({
+    const response: Record<string, unknown> = {
       success: false,
       error: err.message,
-    });
+      code: err.code,
+    };
+
+    // Include validation details if present
+    if (err instanceof ValidationError && Object.keys(err.details).length > 0) {
+      response.details = err.details;
+    }
+
+    // Include Retry-After header for rate limiting
+    if (err instanceof RateLimitError) {
+      res.setHeader("Retry-After", String(err.retryAfter));
+    }
+
+    res.status(err.statusCode).json(response);
     return;
   }
 
@@ -66,6 +67,7 @@ export function errorHandler(
       res.status(409).json({
         success: false,
         error: `Duplicate entry: ${prismaErr.meta?.target?.join(", ") ?? "unknown field"}`,
+        code: "CONFLICT",
       });
       return;
     }
@@ -73,6 +75,7 @@ export function errorHandler(
       res.status(404).json({
         success: false,
         error: "Referenced record not found",
+        code: "NOT_FOUND",
       });
       return;
     }
@@ -82,6 +85,7 @@ export function errorHandler(
   res.status(500).json({
     success: false,
     error: process.env.NODE_ENV === "production" ? "Internal server error" : err.message,
+    code: "INTERNAL_ERROR",
   });
 }
 

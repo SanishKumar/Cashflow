@@ -1,10 +1,19 @@
-// ──────────────────────────────────────────────
-// Database Seed — Demo Data with Roles
-// ──────────────────────────────────────────────
+/**
+ * Database Seed — Demo Data with Auth & Roles
+ *
+ * Creates demo users with hashed passwords, groups with ADMIN/MEMBER/AUDITOR
+ * roles, transactions with debt shares, and audit log entries.
+ *
+ * All demo users have the password: "Password123"
+ */
 
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
+
+const DEMO_PASSWORD = "Password123";
+const BCRYPT_ROUNDS = 12;
 
 async function main() {
   console.log("[SEED] Cleaning existing data...");
@@ -12,45 +21,54 @@ async function main() {
   await prisma.debtShare.deleteMany();
   await prisma.transaction.deleteMany();
   await prisma.groupMember.deleteMany();
+  await prisma.session.deleteMany();
   await prisma.group.deleteMany();
   await prisma.user.deleteMany();
+
+  console.log("[SEED] Hashing passwords (bcrypt cost=12, this may take a moment)...");
+  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, BCRYPT_ROUNDS);
 
   console.log("[SEED] Creating users...");
   const users = await Promise.all([
     prisma.user.create({
       data: {
         name: "Alex Chen",
-        email: "alex.chen@example.com",
+        email: "alex@cashflow.dev",
+        passwordHash,
       },
     }),
     prisma.user.create({
       data: {
         name: "Sarah Kim",
-        email: "sarah.kim@example.com",
+        email: "sarah@cashflow.dev",
+        passwordHash,
       },
     }),
     prisma.user.create({
       data: {
         name: "Mike Johnson",
-        email: "mike.johnson@example.com",
+        email: "mike@cashflow.dev",
+        passwordHash,
       },
     }),
     prisma.user.create({
       data: {
         name: "Emily Davis",
-        email: "emily.davis@example.com",
+        email: "emily@cashflow.dev",
+        passwordHash,
       },
     }),
     prisma.user.create({
       data: {
         name: "Chris Lee",
-        email: "chris.lee@example.com",
+        email: "chris@cashflow.dev",
+        passwordHash,
       },
     }),
   ]);
 
   const [alex, sarah, mike, emily, chris] = users;
-  console.log(`[SEED] Created ${users.length} users.`);
+  console.log(`[SEED] Created ${users.length} users (password: "${DEMO_PASSWORD}").`);
 
   console.log("[SEED] Creating groups with roles...");
   const engineeringGroup = await prisma.group.create({
@@ -63,7 +81,7 @@ async function main() {
           { userId: sarah.id, role: "MEMBER" },
           { userId: mike.id, role: "MEMBER" },
           { userId: emily.id, role: "MEMBER" },
-          { userId: chris.id, role: "MEMBER" },
+          { userId: chris.id, role: "AUDITOR" },
         ],
       },
     },
@@ -83,7 +101,23 @@ async function main() {
     },
   });
 
-  console.log("[SEED] Created 2 groups with roles.");
+  const officeGroup = await prisma.group.create({
+    data: {
+      name: "Office Supplies",
+      description: "Shared office and supplies expenses",
+      currency: "USD",
+      members: {
+        create: [
+          { userId: mike.id, role: "ADMIN" },
+          { userId: alex.id, role: "MEMBER" },
+          { userId: emily.id, role: "MEMBER" },
+          { userId: chris.id, role: "AUDITOR" },
+        ],
+      },
+    },
+  });
+
+  console.log("[SEED] Created 3 groups with roles (ADMIN/MEMBER/AUDITOR).");
 
   console.log("[SEED] Creating transactions...");
 
@@ -203,20 +237,71 @@ async function main() {
     },
   });
 
-  // Create initial audit log entries
+  // Office Supplies group transactions
+  const officeMembers = [mike, alex, emily, chris];
+  const printerAmount = 450;
+  await prisma.transaction.create({
+    data: {
+      groupId: officeGroup.id,
+      paidById: mike.id,
+      amount: printerAmount,
+      description: "Printer Ink & Paper",
+      debtShares: {
+        create: officeMembers.map((u) => ({
+          owedById: u.id,
+          amount: printerAmount / officeMembers.length,
+        })),
+      },
+    },
+  });
+
+  const snacksAmount = 120;
+  await prisma.transaction.create({
+    data: {
+      groupId: officeGroup.id,
+      paidById: emily.id,
+      amount: snacksAmount,
+      description: "Snacks & Coffee Supplies",
+      debtShares: {
+        create: officeMembers.map((u) => ({
+          owedById: u.id,
+          amount: snacksAmount / officeMembers.length,
+        })),
+      },
+    },
+  });
+
+  // Create audit log entries using the AuditAction enum values
   await prisma.auditLog.createMany({
     data: [
       { userId: alex.id, groupId: engineeringGroup.id, action: "GROUP_CREATED", details: 'Created group "Engineering Team"' },
       { userId: sarah.id, groupId: tripGroup.id, action: "GROUP_CREATED", details: 'Created group "SF Weekend Trip"' },
-      { userId: alex.id, groupId: engineeringGroup.id, action: "EXPENSE_ADDED", details: "Added expense \"AWS Hosting Bill - Q3\" for 4250" },
-      { userId: sarah.id, groupId: engineeringGroup.id, action: "EXPENSE_ADDED", details: "Added expense \"Team Lunch - SF Office\" for 340.5" },
-      { userId: alex.id, groupId: engineeringGroup.id, action: "EXPENSE_ADDED", details: "Added expense \"GitHub Enterprise Licenses\" for 1200" },
+      { userId: mike.id, groupId: officeGroup.id, action: "GROUP_CREATED", details: 'Created group "Office Supplies"' },
+      { userId: alex.id, groupId: engineeringGroup.id, action: "EXPENSE_ADDED", details: 'Added expense "AWS Hosting Bill - Q3" for $4,250' },
+      { userId: sarah.id, groupId: engineeringGroup.id, action: "EXPENSE_ADDED", details: 'Added expense "Team Lunch - SF Office" for $340.50' },
+      { userId: alex.id, groupId: engineeringGroup.id, action: "EXPENSE_ADDED", details: 'Added expense "GitHub Enterprise Licenses" for $1,200' },
+      { userId: mike.id, groupId: engineeringGroup.id, action: "EXPENSE_ADDED", details: 'Added expense "Office Supplies Restock" for $85' },
+      { userId: emily.id, groupId: engineeringGroup.id, action: "EXPENSE_ADDED", details: 'Added expense "Tech Conference Tickets" for $900' },
+      { userId: alex.id, groupId: tripGroup.id, action: "EXPENSE_ADDED", details: 'Added expense "Hotel - 2 Nights" for $600' },
+      { userId: mike.id, groupId: tripGroup.id, action: "EXPENSE_ADDED", details: 'Added expense "Group Dinner" for $180' },
+      { userId: alex.id, groupId: engineeringGroup.id, action: "MEMBER_ADDED", details: "Added Chris Lee to the group" },
+      { userId: alex.id, groupId: engineeringGroup.id, action: "ROLE_CHANGED", details: "Changed Chris Lee's role from MEMBER to AUDITOR", metadata: { targetUserId: chris.id, oldRole: "MEMBER", newRole: "AUDITOR" } },
     ],
   });
 
-  console.log("[SEED] Created 7 transactions with debt shares.");
-  console.log("[SEED] Created initial audit log entries.");
+  console.log("[SEED] Created 9 transactions with debt shares.");
+  console.log("[SEED] Created 12 audit log entries.");
+  console.log("");
   console.log("[SEED] ✓ Seeding complete!");
+  console.log("");
+  console.log("  Demo Accounts:");
+  console.log("  ─────────────────────────────────────");
+  console.log(`  alex@cashflow.dev    / ${DEMO_PASSWORD}  (Admin of Engineering Team)`);
+  console.log(`  sarah@cashflow.dev   / ${DEMO_PASSWORD}  (Admin of SF Weekend Trip)`);
+  console.log(`  mike@cashflow.dev    / ${DEMO_PASSWORD}  (Admin of Office Supplies)`);
+  console.log(`  emily@cashflow.dev   / ${DEMO_PASSWORD}  (Member)`);
+  console.log(`  chris@cashflow.dev   / ${DEMO_PASSWORD}  (Auditor of Engineering Team)`);
+  console.log("");
 }
 
 main()

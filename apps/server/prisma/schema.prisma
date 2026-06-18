@@ -8,19 +8,37 @@ datasource db {
 }
 
 model User {
-  id          String        @id @default(cuid())
-  name        String
-  email       String        @unique
-  avatarUrl   String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String
+  avatarUrl    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   memberships GroupMember[]
   paidBy      Transaction[] @relation("PaidBy")
   debtShares  DebtShare[]
   auditLogs   AuditLog[]
+  sessions    Session[]
 
   @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
 }
 
 enum TransactionStatus {
@@ -32,6 +50,27 @@ enum TransactionStatus {
 enum GroupRole {
   ADMIN
   MEMBER
+  AUDITOR
+}
+
+enum AuditAction {
+  GROUP_CREATED
+  GROUP_DELETED
+  GROUP_UPDATED
+  MEMBER_ADDED
+  MEMBER_REMOVED
+  MEMBER_LEFT
+  ROLE_CHANGED
+  EXPENSE_ADDED
+  EXPENSE_DELETED
+  EXPENSE_UPDATED
+  SETTLEMENT_COMPLETED
+  EXPORT_CSV
+  EXPORT_PDF
+  EXPORT_EMAIL
+  USER_LOGIN
+  USER_REGISTER
+  USER_LOGOUT
 }
 
 model Group {
@@ -100,12 +139,13 @@ model DebtShare {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   userId    String
   groupId   String?
-  action    String
+  action    AuditAction
   details   String?
-  createdAt DateTime @default(now())
+  metadata  Json?
+  createdAt DateTime    @default(now())
 
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   group Group? @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -113,5 +153,6 @@ model AuditLog {
   @@index([groupId])
   @@index([userId])
   @@index([createdAt])
+  @@index([action])
   @@map("audit_logs")
 }

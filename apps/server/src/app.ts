@@ -1,12 +1,17 @@
-// ──────────────────────────────────────────────
-// Express Application Setup
-// ──────────────────────────────────────────────
+/**
+ * Express Application Setup
+ *
+ * Configures middleware, auth, routing, and error handling.
+ * Auth routes are public; all other API routes require authentication
+ * via JWT Bearer tokens.
+ */
 
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 
+import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
 import groupRoutes from "./routes/groups.js";
 import transactionRoutes from "./routes/transactions.js";
@@ -15,7 +20,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
 
-// ── Security & Parsing Middleware ──────────────
+// Security & Parsing Middleware
 app.use(helmet());
 app.use(
   cors({
@@ -26,7 +31,7 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan("dev"));
 
-// ── Health Check ───────────────────────────────
+// Health Check (public)
 app.get("/api/health", (_req, res) => {
   res.json({
     success: true,
@@ -34,28 +39,30 @@ app.get("/api/health", (_req, res) => {
       status: "healthy",
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      version: "2.1.0",
+      version: "3.0.0",
     },
   });
 });
 
-// ── API Routes ─────────────────────────────────
-// User routes remain public (needed for login picker)
+// Auth routes (public — no token required)
+app.use("/api/auth", authRoutes);
+
+// API Routes (protected via auth middleware applied in each router)
 app.use("/api/users", userRoutes);
-// Group & transaction routes have identity middleware applied internally
 app.use("/api/groups", groupRoutes);
 app.use("/api/groups", transactionRoutes);
 app.use("/api/audit-logs", auditLogRoutes);
 
-// ── 404 Handler ────────────────────────────────
+// 404 Handler
 app.use((_req, res) => {
   res.status(404).json({
     success: false,
     error: "Endpoint not found",
+    code: "NOT_FOUND",
   });
 });
 
-// ── Global Error Handler ───────────────────────
+// Global Error Handler
 app.use(errorHandler);
 
 export default app;

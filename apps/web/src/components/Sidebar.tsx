@@ -35,8 +35,8 @@ export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
     }
   };
 
-  const handleSignOut = () => {
-    logout();
+  const handleSignOut = async () => {
+    await logout();
     window.location.href = "/login";
   };
 

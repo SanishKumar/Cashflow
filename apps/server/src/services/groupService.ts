@@ -4,7 +4,7 @@
 
 import prisma from "../lib/prisma.js";
 import type { CreateGroupInput, UpdateGroupInput } from "../types/api.js";
-import { NotFoundError, ConflictError, AppError } from "../middleware/errorHandler.js";
+import { NotFoundError, ConflictError, AuthorizationError } from "../lib/errors.js";
 import { auditLogService } from "./auditLogService.js";
 
 const GROUP_INCLUDE = {
@@ -214,20 +214,84 @@ export class GroupService {
   }
 
   /**
-   * Verify a user has the required role in a group.
+   * Verify a user has one of the required roles in a group.
+   * Supports checking against multiple allowed roles.
    */
-  private async requireRole(groupId: string, userId: string, requiredRole: "ADMIN" | "MEMBER") {
+  async requireRole(
+    groupId: string,
+    userId: string,
+    allowedRoles: ("ADMIN" | "MEMBER" | "AUDITOR")[] | "ADMIN" | "MEMBER" | "AUDITOR"
+  ) {
+    const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
+
     const membership = await prisma.groupMember.findUnique({
       where: { userId_groupId: { userId, groupId } },
     });
 
     if (!membership) {
-      throw new AppError("You are not a member of this group", 403);
+      throw new AuthorizationError("You are not a member of this group");
     }
 
-    if (requiredRole === "ADMIN" && membership.role !== "ADMIN") {
-      throw new AppError("Admin access required for this action", 403);
+    if (!roles.includes(membership.role as any)) {
+      throw new AuthorizationError(
+        `This action requires one of the following roles: ${roles.join(", ")}`
+      );
     }
+
+    return membership;
+  }
+
+  /**
+   * Change a member's role in a group. Requires ADMIN role.
+   */
+  async changeRole(
+    groupId: string,
+    targetUserId: string,
+    newRole: "ADMIN" | "MEMBER" | "AUDITOR",
+    requestingUserId: string
+  ) {
+    // Verify requester is ADMIN
+    await this.requireRole(groupId, requestingUserId, "ADMIN");
+
+    // Find target membership
+    const membership = await prisma.groupMember.findUnique({
+      where: { userId_groupId: { userId: targetUserId, groupId } },
+      include: { user: { select: { name: true } } },
+    });
+
+    if (!membership) {
+      throw new NotFoundError("Group membership");
+    }
+
+    // Prevent demoting yourself if you're the last admin
+    if (targetUserId === requestingUserId && membership.role === "ADMIN" && newRole !== "ADMIN") {
+      const adminCount = await prisma.groupMember.count({
+        where: { groupId, role: "ADMIN" },
+      });
+      if (adminCount <= 1) {
+        throw new AuthorizationError("Cannot demote yourself — you are the only admin");
+      }
+    }
+
+    const oldRole = membership.role;
+    const updated = await prisma.groupMember.update({
+      where: { id: membership.id },
+      data: { role: newRole },
+      include: {
+        user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      },
+    });
+
+    // Audit log
+    await auditLogService.log({
+      userId: requestingUserId,
+      groupId,
+      action: "ROLE_CHANGED",
+      details: `Changed ${membership.user.name}'s role from ${oldRole} to ${newRole}`,
+      metadata: { targetUserId, oldRole, newRole },
+    });
+
+    return updated;
   }
 
   /**
@@ -242,3 +306,4 @@ export class GroupService {
 }
 
 export const groupService = new GroupService();
+

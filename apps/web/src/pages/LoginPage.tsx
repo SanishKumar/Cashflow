@@ -1,62 +1,109 @@
-// ──────────────────────────────────────────────
-// Login Page — "Who's Watching?" Identity Picker
-// ──────────────────────────────────────────────
+/**
+ * Login Page — Real Authentication
+ *
+ * Two-tab interface for Login and Register.
+ * Uses email + password with proper validation and error handling.
+ */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { userApi } from "../lib/api";
-import type { User } from "../types/index";
+import { useUser } from "../contexts/UserContext";
 
-function getInitials(name: string): string {
-  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-}
+type AuthTab = "login" | "register";
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { currentUserId, login, register, loading: authLoading } = useUser();
 
+  const [tab, setTab] = useState<AuthTab>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  // If already authenticated, redirect to dashboard
   useEffect(() => {
-    // If already logged in, go to dashboard
-    const existing = localStorage.getItem("currentUserId");
-    if (existing) {
+    if (!authLoading && currentUserId) {
       navigate("/", { replace: true });
+    }
+  }, [currentUserId, authLoading, navigate]);
+
+  const resetForm = () => {
+    setEmail("");
+    setPassword("");
+    setName("");
+    setConfirmPassword("");
+    setError(null);
+  };
+
+  const handleTabSwitch = (newTab: AuthTab) => {
+    setTab(newTab);
+    resetForm();
+  };
+
+  const handleLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !password) return;
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      await login(email.trim(), password);
+      navigate("/", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRegister = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !email.trim() || !password) return;
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
       return;
     }
 
-    userApi.list().then((u) => {
-      setUsers(u);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [navigate]);
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
 
-  const handleSelect = (userId: string) => {
-    localStorage.setItem("currentUserId", userId);
-    window.location.href = "/";
-  };
-
-  const handleCreate = async () => {
-    if (!newName.trim() || !newEmail.trim()) return;
-    setCreating(true);
+    setSubmitting(true);
     setError(null);
+
     try {
-      const user = await userApi.create({ name: newName.trim(), email: newEmail.trim() });
-      localStorage.setItem("currentUserId", user.id);
-      window.location.href = "/";
+      await register(name.trim(), email.trim(), password);
+      navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create user");
-      setCreating(false);
+      setError(err instanceof Error ? err.message : "Registration failed");
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="h-[100dvh] w-full bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 animate-fade-in">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-container to-[#4f46e5] flex items-center justify-center">
+            <span className="material-symbols-outlined text-white text-[24px] animate-spin">sync</span>
+          </div>
+          <p className="text-[13px] text-on-surface-variant font-medium">Restoring session...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-[100dvh] w-full bg-background flex items-center justify-center overflow-auto">
-      <div className="w-full max-w-lg px-6 py-12 flex flex-col items-center animate-fade-in">
+      <div className="w-full max-w-[420px] px-6 py-12 flex flex-col items-center animate-fade-in">
         {/* Logo */}
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-container to-[#4f46e5] flex items-center justify-center mb-6 shadow-lg shadow-primary/20">
           <span className="material-symbols-outlined text-white text-[28px]">account_balance</span>
@@ -65,105 +112,212 @@ export function LoginPage() {
         <h1 className="text-[28px] font-bold text-on-surface tracking-tight mb-1">
           CashFlow
         </h1>
-        <p className="text-[14px] text-on-surface-variant mb-10">
-          Who's using this session?
+        <p className="text-[14px] text-on-surface-variant mb-8">
+          Enterprise debt minimization platform
         </p>
 
-        {/* User Grid */}
-        {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 w-full">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="h-[120px] rounded-xl bg-surface-variant/30 animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 w-full">
-            {users.map((user, i) => (
-              <button
-                key={user.id}
-                onClick={() => handleSelect(user.id)}
-                className="group flex flex-col items-center gap-3 p-5 rounded-xl bg-surface-container border border-outline-variant/30 hover:border-primary/50 hover:bg-glow-primary hover:shadow-lg hover:shadow-primary/10 transition-all duration-200 cursor-pointer animate-slide-up"
-                style={{ animationDelay: `${i * 60}ms` }}
-              >
-                <div className={`avatar avatar-lg avatar-${i % 6} !w-14 !h-14 !text-[18px] group-hover:scale-110 transition-transform duration-200`}>
-                  {getInitials(user.name)}
-                </div>
-                <div className="text-center">
-                  <p className="text-[13px] font-semibold text-on-surface group-hover:text-primary transition-colors">{user.name}</p>
-                  <p className="text-[10px] text-on-surface-variant mt-0.5 truncate max-w-[120px]">{user.email}</p>
-                </div>
-              </button>
-            ))}
+        {/* Tab Switcher */}
+        <div className="w-full flex gap-1 bg-surface-variant/30 rounded-lg p-1 mb-6">
+          <button
+            onClick={() => handleTabSwitch("login")}
+            className={`flex-1 h-9 rounded-md text-[13px] font-semibold transition-all duration-200 ${
+              tab === "login"
+                ? "bg-surface-container-high text-on-surface shadow-sm"
+                : "text-on-surface-variant hover:text-on-surface"
+            }`}
+          >
+            Sign In
+          </button>
+          <button
+            onClick={() => handleTabSwitch("register")}
+            className={`flex-1 h-9 rounded-md text-[13px] font-semibold transition-all duration-200 ${
+              tab === "register"
+                ? "bg-surface-container-high text-on-surface shadow-sm"
+                : "text-on-surface-variant hover:text-on-surface"
+            }`}
+          >
+            Create Account
+          </button>
+        </div>
 
-            {/* Create New User */}
-            <button
-              onClick={() => setShowCreate(true)}
-              className="flex flex-col items-center justify-center gap-2 p-5 rounded-xl border-2 border-dashed border-outline-variant/40 hover:border-primary/50 hover:bg-surface-container transition-all duration-200 cursor-pointer min-h-[120px]"
-            >
-              <span className="material-symbols-outlined text-[28px] text-on-surface-variant">person_add</span>
-              <p className="text-[12px] font-medium text-on-surface-variant">New User</p>
-            </button>
+        {/* Error Display */}
+        {error && (
+          <div className="w-full flex items-start gap-2.5 p-3 rounded-lg bg-glow-error border border-error/20 text-error text-[13px] mb-4 animate-fade-in">
+            <span className="material-symbols-outlined text-[16px] mt-0.5 shrink-0">error</span>
+            <span>{error}</span>
           </div>
         )}
 
-        {/* Create User Form */}
-        {showCreate && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowCreate(false)}>
-            <div className="glass-panel w-[400px] flex flex-col overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-center px-6 py-4 border-b border-glass-border">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-glow-primary flex items-center justify-center">
-                    <span className="material-symbols-outlined text-primary text-[18px]">person_add</span>
-                  </div>
-                  <h2 className="text-[15px] font-semibold text-on-surface">Create Profile</h2>
-                </div>
-                <button onClick={() => setShowCreate(false)} className="btn-ghost !p-1.5 !h-auto hover:bg-surface-variant rounded-full">
-                  <span className="material-symbols-outlined text-[18px]">close</span>
-                </button>
-              </div>
+        {/* Login Form */}
+        {tab === "login" && (
+          <form onSubmit={handleLogin} className="w-full flex flex-col gap-4 animate-fade-in">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-label" htmlFor="login-email">Email</label>
+              <input
+                id="login-email"
+                className="input-field"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                autoFocus
+                required
+              />
+            </div>
 
-              <div className="px-6 py-5 flex flex-col gap-4">
-                {error && (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-glow-error border border-error/20 text-error text-[13px]">
-                    <span className="material-symbols-outlined text-[16px]">error</span>
-                    {error}
-                  </div>
-                )}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-label">Name</label>
-                  <input
-                    className="input-field"
-                    placeholder="e.g., John Doe"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-label">Email</label>
-                  <input
-                    className="input-field"
-                    placeholder="e.g., john@example.com"
-                    type="email"
-                    value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="px-6 py-4 border-t border-glass-border flex justify-end gap-3 bg-surface-dim/30">
-                <button onClick={() => setShowCreate(false)} className="btn-secondary">Cancel</button>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-label" htmlFor="login-password">Password</label>
+              <div className="relative">
+                <input
+                  id="login-password"
+                  className="input-field pr-10"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
                 <button
-                  onClick={handleCreate}
-                  disabled={!newName.trim() || !newEmail.trim() || creating}
-                  className="btn-primary"
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
+                  tabIndex={-1}
                 >
-                  {creating ? "Creating..." : "Create & Sign In"}
+                  <span className="material-symbols-outlined text-[18px]">
+                    {showPassword ? "visibility_off" : "visibility"}
+                  </span>
                 </button>
               </div>
             </div>
-          </div>
+
+            <button
+              type="submit"
+              disabled={!email.trim() || !password || submitting}
+              className="btn-primary w-full mt-2 h-11"
+            >
+              {submitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+                  Signing in...
+                </span>
+              ) : (
+                "Sign In"
+              )}
+            </button>
+          </form>
         )}
+
+        {/* Register Form */}
+        {tab === "register" && (
+          <form onSubmit={handleRegister} className="w-full flex flex-col gap-4 animate-fade-in">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-label" htmlFor="register-name">Full Name</label>
+              <input
+                id="register-name"
+                className="input-field"
+                type="text"
+                placeholder="John Doe"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="name"
+                autoFocus
+                required
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-label" htmlFor="register-email">Email</label>
+              <input
+                id="register-email"
+                className="input-field"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-label" htmlFor="register-password">Password</label>
+              <div className="relative">
+                <input
+                  id="register-password"
+                  className="input-field pr-10"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Min. 8 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
+                  tabIndex={-1}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {showPassword ? "visibility_off" : "visibility"}
+                  </span>
+                </button>
+              </div>
+              <p className="text-[11px] text-on-surface-variant mt-0.5">
+                Must include uppercase, lowercase, and a digit
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-label" htmlFor="register-confirm">Confirm Password</label>
+              <input
+                id="register-confirm"
+                className="input-field"
+                type={showPassword ? "text" : "password"}
+                placeholder="Repeat password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={!name.trim() || !email.trim() || !password || !confirmPassword || submitting}
+              className="btn-primary w-full mt-2 h-11"
+            >
+              {submitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+                  Creating account...
+                </span>
+              ) : (
+                "Create Account"
+              )}
+            </button>
+          </form>
+        )}
+
+        {/* Demo Credentials */}
+        <div className="w-full mt-8 pt-6 border-t border-outline-variant/20">
+          <p className="text-[11px] text-on-surface-variant text-center mb-3 uppercase font-medium tracking-wider">
+            Demo Credentials
+          </p>
+          <div className="glass-panel-sm p-3 text-[12px] font-mono text-on-surface-variant space-y-1">
+            <div className="flex justify-between">
+              <span>alex@cashflow.dev</span>
+              <span className="text-on-surface">Password123</span>
+            </div>
+            <div className="flex justify-between">
+              <span>sarah@cashflow.dev</span>
+              <span className="text-on-surface">Password123</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

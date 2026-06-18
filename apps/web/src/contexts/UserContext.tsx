@@ -1,8 +1,15 @@
-// ──────────────────────────────────────────────
-// User Context — Singular Identity Management
-// ──────────────────────────────────────────────
+/**
+ * User Context — JWT-Aware Authentication State
+ *
+ * Manages the current user's authentication lifecycle:
+ * - On mount: checks for stored refresh token and attempts to restore session
+ * - login/register: stores tokens and user profile
+ * - logout: clears tokens and redirects to login
+ * - Auto-refresh: handles transparent token rotation via the API client
+ */
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { authApi, setAccessToken, setRefreshToken, getRefreshToken, clearAuth } from "../lib/api";
 
 interface User {
   id: string;
@@ -15,55 +22,71 @@ interface UserContextType {
   currentUser: User | null;
   currentUserId: string | null;
   loading: boolean;
-  login: (userId: string) => void;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(
-    () => localStorage.getItem("currentUserId")
-  );
   const [loading, setLoading] = useState(true);
 
+  // Restore session from refresh token on mount
   useEffect(() => {
-    if (!currentUserId) {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) {
       setLoading(false);
       return;
     }
 
-    // Fetch the current user's profile
-    import("../lib/api").then(({ userApi }) => {
-      userApi.get(currentUserId)
-        .then(user => {
-          setCurrentUser(user);
-          setLoading(false);
-        })
-        .catch(() => {
-          // Invalid userId in localStorage — clear it
-          localStorage.removeItem("currentUserId");
-          setCurrentUserId(null);
-          setCurrentUser(null);
-          setLoading(false);
-        });
-    });
-  }, [currentUserId]);
+    // Try to restore session by fetching user profile
+    // The API client will auto-refresh the access token using the stored refresh token
+    authApi
+      .me()
+      .then((user) => {
+        setCurrentUser(user);
+        setLoading(false);
+      })
+      .catch(() => {
+        // Invalid or expired session — clear everything
+        clearAuth();
+        setCurrentUser(null);
+        setLoading(false);
+      });
+  }, []);
 
-  const login = (userId: string) => {
-    localStorage.setItem("currentUserId", userId);
-    setCurrentUserId(userId);
-  };
+  const login = useCallback(async (email: string, password: string) => {
+    const result = await authApi.login({ email, password });
+    setAccessToken(result.accessToken);
+    setRefreshToken(result.refreshToken);
+    setCurrentUser(result.user);
+  }, []);
 
-  const logout = () => {
-    localStorage.removeItem("currentUserId");
-    setCurrentUserId(null);
+  const register = useCallback(async (name: string, email: string, password: string) => {
+    const result = await authApi.register({ name, email, password });
+    setAccessToken(result.accessToken);
+    setRefreshToken(result.refreshToken);
+    setCurrentUser(result.user);
+  }, []);
+
+  const logout = useCallback(async () => {
+    await authApi.logout();
     setCurrentUser(null);
-  };
+  }, []);
 
   return (
-    <UserContext.Provider value={{ currentUser, currentUserId, loading, login, logout }}>
+    <UserContext.Provider
+      value={{
+        currentUser,
+        currentUserId: currentUser?.id ?? null,
+        loading,
+        login,
+        register,
+        logout,
+      }}
+    >
       {children}
     </UserContext.Provider>
   );

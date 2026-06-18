@@ -7,14 +7,14 @@ import { transactionService } from "../services/transactionService.js";
 import { auditLogService } from "../services/auditLogService.js";
 import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
-import { requireIdentity } from "../middleware/identity.js";
+import { requireAuth } from "../middleware/auth.js";
 import { z } from "zod";
 import { CreateTransactionSchema } from "../types/api.js";
 
 const router = Router();
 
 // All transaction routes require identity
-router.use(requireIdentity);
+router.use(requireAuth);
 
 // POST /api/groups/:groupId/transactions — Create a new transaction
 router.post(
