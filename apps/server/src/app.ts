@@ -17,6 +17,7 @@ import groupRoutes from "./routes/groups.js";
 import transactionRoutes from "./routes/transactions.js";
 import auditLogRoutes from "./routes/auditLogs.js";
 import exportRoutes from "./routes/exports.js";
+import dashboardRoutes from "./routes/dashboard.js";
 import { apiLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import prisma from "./lib/prisma.js";
@@ -88,6 +89,7 @@ app.use("/api/groups", groupRoutes);
 app.use("/api/groups", transactionRoutes);
 app.use("/api/audit-logs", auditLogRoutes);
 app.use("/api/groups/:groupId/export", exportRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // 404 Handler
 app.use((_req, res) => {

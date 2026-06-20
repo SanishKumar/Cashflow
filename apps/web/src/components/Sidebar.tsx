@@ -11,7 +11,8 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { to: "/", icon: "dashboard", label: "Groups", end: true },
+  { to: "/", icon: "space_dashboard", label: "Dashboard", end: true },
+  { to: "/groups", icon: "group", label: "Groups", end: false },
   { to: "/ledger", icon: "receipt_long", label: "Ledger", end: false },
   { to: "/settings", icon: "tune", label: "Settings", end: false },
 ];
@@ -29,9 +30,9 @@ export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const q = e.target.value;
     if (q) {
-      navigate(`/?q=${encodeURIComponent(q)}`, { replace: true });
+      navigate(`/groups?q=${encodeURIComponent(q)}`, { replace: true });
     } else {
-      navigate(`/`, { replace: true });
+      navigate(`/groups`, { replace: true });
     }
   };
 

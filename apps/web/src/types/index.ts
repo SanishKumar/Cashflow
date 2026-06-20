@@ -80,6 +80,21 @@ export interface AuditLogEntry {
   group?: { id: string; name: string } | null;
 }
 
+export interface MonthlyVolume {
+  month: string;
+  volume: number;
+}
+
+export interface DashboardStats {
+  totalGroups: number;
+  totalTransactions: number;
+  totalVolume: number;
+  pendingSettlements: number;
+  netPosition: number;
+  recentActivity: AuditLogEntry[];
+  monthlyVolume: MonthlyVolume[];
+}
+
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;

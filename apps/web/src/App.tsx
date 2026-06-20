@@ -1,9 +1,6 @@
-// ──────────────────────────────────────────────
-// App — Root Component with Auth-Aware Routing
-// ──────────────────────────────────────────────
-
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { DashboardPage } from "./pages/DashboardPage";
 import { GroupsPage } from "./pages/GroupsPage";
 import { GroupDetailPage } from "./pages/GroupDetailPage";
 import { LedgerPage } from "./pages/LedgerPage";
@@ -49,7 +46,8 @@ export default function App() {
               </AuthGuard>
             }
           >
-            <Route path="/" element={<GroupsPage />} />
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/groups" element={<GroupsPage />} />
             <Route path="/groups/:id" element={<GroupDetailPage />} />
             <Route path="/ledger" element={<LedgerPage />} />
             <Route path="/settings" element={<SettingsPage />} />
@@ -60,3 +58,4 @@ export default function App() {
     </BrowserRouter>
   );
 }
+

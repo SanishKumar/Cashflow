@@ -17,6 +17,7 @@ import type {
   Transaction,
   GroupBalances,
   AuditLogEntry,
+  DashboardStats,
 } from "../types/index";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -333,5 +334,10 @@ export const exportApi = {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   },
+};
+
+// Dashboard API
+export const dashboardApi = {
+  getStats: () => request<DashboardStats>("/dashboard/stats"),
 };
 

@@ -79,6 +79,7 @@ async function setupRedisAdapter(server: TypedServer): Promise<void> {
     ...(useTls ? { tls: { rejectUnauthorized: false } } : {}),
     // Connection resilience
     connectTimeout: 10000,
+    enableReadyCheck: false,
     retryStrategy: (times: number) => {
       if (times > 5) return null; // stop retrying after 5 attempts
       return Math.min(times * 200, 2000);
