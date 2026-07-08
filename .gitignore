@@ -46,3 +46,4 @@ packages/solver/*.wasm
 
 # Emscripten SDK
 emsdk/
+implementation_plan_complete

@@ -2,7 +2,7 @@
 
 🚀 **Live Demo:** [https://cashflow-phi-amber.vercel.app/](https://cashflow-phi-amber.vercel.app/)
 
-> Enterprise-grade debt minimization platform powered by an Optimized Directed Graph Minimization Engine. Minimize complex debt networks among groups in real-time.
+> The open-source, developer-friendly debt platform with the most transparent algorithm, real-time graph visualization, and enterprise-grade permissions — for people who care about how their financial tools actually work.
 
 ## Key Features
 
