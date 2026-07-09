@@ -31,6 +31,19 @@ export function LoginPage() {
     }
   }, [currentUserId, authLoading, navigate]);
 
+  // Auto-login as demo user on first visit
+  useEffect(() => {
+    const hasSeenDemo = sessionStorage.getItem("hasSeenDemo");
+    if (!hasSeenDemo && !authLoading && !currentUserId) {
+      sessionStorage.setItem("hasSeenDemo", "true");
+      setSubmitting(true);
+      login("alex@cashflow.dev", "Password123").catch((err) => {
+        setError("Demo login failed: " + err.message);
+        setSubmitting(false);
+      });
+    }
+  }, [authLoading, currentUserId, login]);
+
   const resetForm = () => {
     setEmail("");
     setPassword("");
