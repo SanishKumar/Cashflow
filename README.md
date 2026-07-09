@@ -1,4 +1,4 @@
-# CashFlow Management v2.0
+# CashFlow Management v3.0
 
 🚀 **Live Demo:** [https://cashflow-phi-amber.vercel.app/](https://cashflow-phi-amber.vercel.app/)
 
