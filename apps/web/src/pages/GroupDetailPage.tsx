@@ -379,8 +379,8 @@ function LedgerView({ transactions, loading, currentUserId, currency, onUpdateSt
         <div className="col-span-2 text-label">Date</div>
         <div className="col-span-4 text-label">Description</div>
         <div className="col-span-3 text-label">Paid By</div>
-        <div className="col-span-2 text-label text-right">Amount</div>
         <div className="col-span-1 text-label text-right">Split</div>
+        <div className="col-span-2 text-label text-right">Amount</div>
       </div>
 
       {/* Rows */}
@@ -403,9 +403,6 @@ function LedgerView({ transactions, loading, currentUserId, currency, onUpdateSt
               </div>
               <span className="text-[13px] text-on-surface truncate">{tx.paidBy.name}</span>
             </div>
-            <div className="order-2 self-start md:self-auto col-span-2 text-data text-left md:text-right text-secondary font-semibold">
-              {formatCurrency(tx.amount, currency)}
-            </div>
             <div className="order-5 md:order-none col-span-1 text-[12px] text-left md:text-right">
               {tx.status === "PENDING" ? (
                 tx.debtShares[0]?.owedById === currentUserId ? (
@@ -425,6 +422,9 @@ function LedgerView({ transactions, loading, currentUserId, currency, onUpdateSt
               ) : (
                 <span className="text-on-surface-variant">{tx.debtShares.length}</span>
               )}
+            </div>
+            <div className="order-2 self-start md:self-auto col-span-2 text-data text-left md:text-right text-secondary font-semibold">
+              {formatCurrency(tx.amount, currency)}
             </div>
           </div>
         ))}
