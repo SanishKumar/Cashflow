@@ -34,10 +34,11 @@ export function DeleteGroupModal({ group, onClose }: DeleteGroupModalProps) {
   const isMatched = confirmName === group.name;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="glass-panel w-[480px] flex flex-col overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
+    <div className="mobile-sheet-overlay fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+      <div className="mobile-sheet glass-panel w-full max-w-[480px] flex flex-col overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
+        <div className="mobile-sheet-handle" />
         {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-error/20 bg-error/5 shrink-0">
+        <div className="flex justify-between items-center px-4 md:px-6 py-4 border-b border-error/20 bg-error/5 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-error/20 flex items-center justify-center">
               <span className="material-symbols-outlined text-error text-[18px]">warning</span>
@@ -53,7 +54,7 @@ export function DeleteGroupModal({ group, onClose }: DeleteGroupModalProps) {
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 flex flex-col gap-4">
+        <div className="px-4 md:px-6 py-5 flex flex-col gap-4 overflow-y-auto">
           {error && (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-glow-error border border-error/20 text-error text-[13px]">
               <span className="material-symbols-outlined text-[16px]">error</span>
@@ -83,7 +84,7 @@ export function DeleteGroupModal({ group, onClose }: DeleteGroupModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-glass-border flex justify-end gap-3 bg-surface-dim/30">
+        <div className="px-4 md:px-6 py-4 border-t border-glass-border flex flex-col-reverse sm:flex-row justify-end gap-3 bg-surface-dim/30">
           <button onClick={onClose} className="btn-secondary" disabled={isDeleting}>
             Cancel
           </button>

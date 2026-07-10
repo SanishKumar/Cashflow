@@ -106,7 +106,7 @@ graph TD
 
 1. **Neon PostgreSQL**: Create a project → copy the connection string. Add `&connect_timeout=30&pool_timeout=30` to prevent serverless cold-start errors.
 2. **Upstash Redis**: Create a database → copy the `rediss://` connection URL (TLS)
-3. Copy `.env.example` → `apps/server/.env` and fill in your credentials
+3. Copy `.env.example` → `apps/server/.env` and fill in your credentials. Receipt scanning also needs `OPENAI_API_KEY`; set `PREMIUM_RECEIPT_USER_IDS` to a comma-separated list of user IDs that should bypass the free 20 scans/hour limit.
 
 ### Local Development
 
@@ -114,7 +114,7 @@ graph TD
 # 1. Clone and install
 npm install
 
-# 2. Set up environment (fill in Neon + Upstash credentials)
+# 2. Set up environment (fill in Neon + Upstash credentials, plus OPENAI_API_KEY for receipt scanning)
 cp .env.example apps/server/.env
 
 # 3. Push database schema to Neon

@@ -3,10 +3,9 @@
 // ──────────────────────────────────────────────
 
 import { useState, useMemo, useRef } from "react";
-import Tesseract from "tesseract.js";
-import { transactionApi } from "../lib/api";
+import { receiptApi, transactionApi } from "../lib/api";
 import { useUser } from "../contexts/UserContext";
-import type { Group } from "../types/index";
+import type { Group, ReceiptData } from "../types/index";
 
 interface ExpenseModalProps {
   group: Group;
@@ -18,6 +17,16 @@ type SplitMode = "equal" | "exact";
 
 function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+}
+
+function formatCategory(category: string): string {
+  return category.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function confidenceLabel(confidence: number): { label: string; className: string } {
+  if (confidence >= 0.85) return { label: "High confidence", className: "text-secondary bg-secondary/10 border-secondary/20" };
+  if (confidence >= 0.6) return { label: "Medium confidence", className: "text-warning bg-warning/10 border-warning/20" };
+  return { label: "Low confidence — please review", className: "text-error bg-error/10 border-error/20" };
 }
 
 export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
@@ -34,7 +43,10 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const [showReceiptItems, setShowReceiptItems] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const parsedAmount = parseFloat(amount) || 0;
 
@@ -111,40 +123,35 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
     }
   };
 
-  const handleScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleScan = async (file: File) => {
 
     setScanning(true);
     setError(null);
     try {
-      const { data: { text } } = await Tesseract.recognize(file, 'eng');
-      
-      const matches = text.match(/\$?\s*\d+\.\d{2}/g);
-      if (matches && matches.length > 0) {
-        const amounts = matches.map((m: string) => parseFloat(m.replace(/[^0-9.]/g, '')));
-        const maxAmount = Math.max(...amounts);
-        setAmount(maxAmount.toFixed(2));
-        setDescription("Scanned Receipt");
-      } else {
-        setError("Could not extract a valid price from the receipt.");
-      }
-    } catch (err) {
-      setError("Failed to scan receipt. Please enter details manually.");
+      const result = await receiptApi.scan(file);
+      setReceiptData(result);
+      setAmount(result.total.toFixed(2));
+      setCurrency(result.currency || currency);
+      setDescription(`${result.vendor || "Scanned receipt"}${result.category ? ` — ${formatCategory(result.category)}` : ""}`);
+      setShowReceiptItems(result.items.length > 0);
+    } catch {
+      setError("We couldn't scan that receipt. You can still enter the expense manually.");
     } finally {
       setScanning(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+    <div className="mobile-sheet-overlay fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
       <div
-        className="glass-panel w-[560px] max-h-[85vh] flex flex-col overflow-hidden animate-scale-in"
+        className="mobile-sheet glass-panel w-full max-w-[560px] max-h-[85vh] flex flex-col overflow-hidden animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="mobile-sheet-handle" />
         {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-glass-border shrink-0">
+        <div className="flex justify-between items-center px-4 md:px-6 py-4 border-b border-glass-border shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-container to-[#4f46e5] flex items-center justify-center">
               <span className="material-symbols-outlined text-white text-[18px]">receipt_long</span>
@@ -154,13 +161,13 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
               <p className="text-[11px] text-on-surface-variant">{group.name}</p>
             </div>
           </div>
-          <button onClick={onClose} className="btn-ghost !p-1.5 !h-auto hover:bg-surface-variant rounded-full">
+          <button onClick={onClose} className="touch-target btn-ghost !p-1.5 !h-auto hover:bg-surface-variant rounded-full">
             <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 
         {/* Form */}
-        <div className="px-6 py-5 flex flex-col gap-5 overflow-y-auto flex-1">
+        <div className="px-4 md:px-6 py-5 flex flex-col gap-5 overflow-y-auto flex-1">
           {error && (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-glow-error border border-error/20 text-error text-[13px]">
               <span className="material-symbols-outlined text-[16px]">error</span>
@@ -181,30 +188,85 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
               e.preventDefault();
               e.stopPropagation();
               const file = e.dataTransfer.files?.[0];
-              if (file) handleScan({ target: { files: [file] } } as any);
+              if (file) handleScan(file);
             }}
           >
             {scanning ? (
               <>
                 <span className="material-symbols-outlined text-[32px] text-primary animate-spin mb-2">sync</span>
-                <p className="text-[13px] font-medium text-primary">Analyzing receipt via Tesseract.js...</p>
+                <p className="text-[13px] font-medium text-primary">Extracting receipt details securely...</p>
                 <div className="absolute bottom-0 left-0 h-1 bg-primary animate-[progress-bar_2s_ease-in-out_infinite] w-full" />
               </>
             ) : (
               <>
                 <span className="material-symbols-outlined text-[32px] text-on-surface-variant mb-2">document_scanner</span>
-                <p className="text-[13px] font-medium text-on-surface">Drag & Drop receipt image</p>
-                <p className="text-[11px] text-on-surface-variant mt-1">or click to browse</p>
+                <p className="text-[13px] font-medium text-on-surface">Drop a receipt image</p>
+                <p className="text-[11px] text-on-surface-variant mt-1">or tap to browse</p>
+                <button
+                  type="button"
+                  onClick={(event) => { event.stopPropagation(); cameraInputRef.current?.click(); }}
+                  className="btn-secondary !h-10 mt-3"
+                >
+                  <span className="material-symbols-outlined text-[17px]">photo_camera</span>
+                  Take Photo
+                </button>
               </>
             )}
             <input 
               type="file" 
-              accept="image/*" 
+              accept="image/jpeg,image/png,image/webp,image/heic"
               ref={fileInputRef} 
               className="hidden" 
-              onChange={handleScan} 
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) handleScan(file);
+              }}
+            />
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              capture="environment"
+              ref={cameraInputRef}
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) handleScan(file);
+              }}
             />
           </div>
+
+          {receiptData && (
+            <div className="rounded-lg border border-outline-variant/40 bg-surface-dim/60 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowReceiptItems((isOpen) => !isOpen)}
+                className="w-full min-h-11 px-3 flex items-center justify-between gap-3 text-left hover:bg-glass-hover transition-colors"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="material-symbols-outlined text-primary text-[18px]">receipt_long</span>
+                  <span className="text-[12px] font-medium text-on-surface truncate">
+                    {receiptData.items.length ? `${receiptData.items.length} scanned item${receiptData.items.length === 1 ? "" : "s"}` : "Receipt scanned"}
+                  </span>
+                </span>
+                <span className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full border ${confidenceLabel(receiptData.confidence).className}`}>
+                  {confidenceLabel(receiptData.confidence).label}
+                </span>
+                <span className="material-symbols-outlined text-on-surface-variant text-[18px]">
+                  {showReceiptItems ? "expand_less" : "expand_more"}
+                </span>
+              </button>
+              {showReceiptItems && receiptData.items.length > 0 && (
+                <div className="border-t border-outline-variant/30 px-3 py-2 space-y-2 max-h-36 overflow-y-auto">
+                  {receiptData.items.map((item, index) => (
+                    <div key={`${item.name}-${index}`} className="flex justify-between gap-3 text-[12px]">
+                      <span className="text-on-surface truncate">{item.quantity > 1 ? `${item.quantity}× ` : ""}{item.name}</span>
+                      <span className="text-data text-on-surface-variant shrink-0">{item.price.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Description */}
           <div className="flex flex-col gap-1.5">
@@ -219,7 +281,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
           </div>
 
           {/* Amount + Currency + Paid By */}
-          <div className="grid grid-cols-[1fr_auto_1fr] gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-[1fr_auto_1fr] gap-3 md:gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-label">Amount</label>
               <div className="relative">
@@ -237,7 +299,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
                 />
               </div>
             </div>
-            <div className="flex flex-col gap-1.5 w-24">
+            <div className="flex flex-col gap-1.5 w-full md:w-24">
               <label className="text-label">Currency</label>
               <select
                 className="input-field"
@@ -252,7 +314,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
                 <option value="INR">INR</option>
               </select>
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="col-span-2 md:col-span-1 flex flex-col gap-1.5">
               <label className="text-label">Paid by</label>
               <select
                 className="input-field"
@@ -321,7 +383,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
                     isSelected ? "bg-transparent" : "bg-surface-dim/50 opacity-50"
                   }`}
                 >
-                  <button onClick={() => toggleMember(member.userId)} className="mr-3 flex items-center">
+                  <button onClick={() => toggleMember(member.userId)} className="touch-target inline-flex items-center justify-center mr-1 shrink-0">
                     <span className={`material-symbols-outlined text-[18px] ${isSelected ? "text-primary" : "text-outline"}`}>
                       {isSelected ? "check_box" : "check_box_outline_blank"}
                     </span>
@@ -364,7 +426,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-glass-border flex justify-between items-center shrink-0">
+        <div className="px-4 md:px-6 py-4 border-t border-glass-border flex justify-between items-center shrink-0">
           <button onClick={onClose} className="btn-ghost text-on-surface-variant">
             <span className="material-symbols-outlined text-[16px]">close</span>
             Discard

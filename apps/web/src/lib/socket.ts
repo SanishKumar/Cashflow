@@ -17,16 +17,19 @@ interface ServerToClientEvents {
   "settlements:updated": (settlements: Settlement[]) => void;
   "member:joined": (member: { userId: string; name: string }) => void;
   "member:left": (data: { userId: string }) => void;
+  "server:pong": (sentAt: number) => void;
 }
 
 interface ClientToServerEvents {
   "group:join": (groupId: string) => void;
   "group:leave": (groupId: string) => void;
+  "client:ping": (sentAt: number) => void;
 }
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 let socket: TypedSocket | null = null;
+const debugSocket = import.meta.env.VITE_DEBUG_SOCKET === "true";
 
 export function getSocket(): TypedSocket {
   if (!socket) {
@@ -43,11 +46,11 @@ export function getSocket(): TypedSocket {
     }) as TypedSocket;
 
     socket.on("connect", () => {
-      console.log("[WS] Connected:", socket?.id);
+      if (debugSocket) console.log("[WS] Connected:", socket?.id);
     });
 
     socket.on("disconnect", (reason) => {
-      console.log("[WS] Disconnected:", reason);
+      if (debugSocket) console.log("[WS] Disconnected:", reason);
     });
   }
 

@@ -47,8 +47,9 @@ export function SettleUpModal({ group, settlements, onClose, onSettled }: Settle
   const allSettled = settledIndices.size === settlements.length && settlements.length > 0;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="glass-panel w-[600px] max-h-[80vh] flex flex-col overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
+    <div className="mobile-sheet-overlay fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+      <div className="mobile-sheet glass-panel w-full max-w-[600px] max-h-[80vh] flex flex-col overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
+        <div className="mobile-sheet-handle" />
         {/* Header */}
         <div className="flex justify-between items-center px-6 py-4 border-b border-glass-border shrink-0">
           <div className="flex items-center gap-3">
@@ -99,7 +100,7 @@ export function SettleUpModal({ group, settlements, onClose, onSettled }: Settle
                 return (
                   <div
                     key={i}
-                    className={`flex items-center gap-4 p-4 rounded-lg border transition-all ${
+                    className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 p-4 rounded-lg border transition-all ${
                       isSettled
                         ? "bg-glow-secondary border-secondary/20 opacity-70"
                         : "bg-surface-dim border-outline-variant/30 hover:border-outline-variant"
@@ -114,14 +115,14 @@ export function SettleUpModal({ group, settlements, onClose, onSettled }: Settle
                     </div>
 
                     {/* Arrow + Amount */}
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 shrink-0 text-center">
                       <span className="material-symbols-outlined text-on-surface-variant text-[16px]">arrow_forward</span>
                       <span className="text-data font-bold text-secondary">${s.amount.toFixed(2)}</span>
                       <span className="material-symbols-outlined text-on-surface-variant text-[16px]">arrow_forward</span>
                     </div>
 
                     {/* To */}
-                    <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                    <div className="flex items-center gap-2 flex-1 min-w-0 sm:justify-end">
                       <span className="text-[13px] font-medium text-on-surface truncate">{s.toName}</span>
                       <div className={`avatar avatar-sm avatar-${(i + 1) % 6}`}>
                         {getInitials(s.toName)}
@@ -132,7 +133,7 @@ export function SettleUpModal({ group, settlements, onClose, onSettled }: Settle
                     <button
                       onClick={() => handleSettle(s, i)}
                       disabled={isSettled || isSettling}
-                      className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
+                      className={`shrink-0 w-full sm:w-auto min-h-11 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
                         isSettled
                           ? "bg-secondary/10 text-secondary border border-secondary/20 !cursor-default"
                           : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white"
@@ -160,7 +161,7 @@ export function SettleUpModal({ group, settlements, onClose, onSettled }: Settle
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-glass-border flex justify-between items-center shrink-0">
+        <div className="px-4 md:px-6 py-4 border-t border-glass-border flex justify-between items-center shrink-0">
           <div className="text-[12px] text-on-surface-variant">
             {settledIndices.size}/{settlements.length} recorded
           </div>

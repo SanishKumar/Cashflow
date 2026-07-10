@@ -116,7 +116,7 @@ export function LoginPage() {
 
   return (
     <div className="h-[100dvh] w-full bg-background flex items-center justify-center overflow-auto">
-      <div className="w-full max-w-[420px] px-6 py-12 flex flex-col items-center animate-fade-in">
+      <div className="w-full max-w-[420px] px-4 py-6 sm:px-6 sm:py-12 flex flex-col items-center animate-fade-in">
         {/* Logo */}
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-container to-[#4f46e5] flex items-center justify-center mb-6 shadow-lg shadow-primary/20">
           <span className="material-symbols-outlined text-white text-[28px]">account_balance</span>

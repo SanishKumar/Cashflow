@@ -2,6 +2,7 @@
 // Sidebar Navigation — v3.0 Identity-Aware
 // ──────────────────────────────────────────────
 
+import { useRef } from "react";
 import { NavLink, useNavigate, useSearchParams } from "react-router-dom";
 import { useUser } from "../contexts/UserContext";
 
@@ -25,6 +26,7 @@ export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
   const navigate = useNavigate();
   const { currentUser, logout } = useUser();
   const [searchParams] = useSearchParams();
+  const swipeStartX = useRef<number | null>(null);
   const searchQuery = searchParams.get("q") || "";
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -41,8 +43,27 @@ export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
     window.location.href = "/login";
   };
 
+  const handleTouchStart = (event: React.TouchEvent<HTMLElement>) => {
+    swipeStartX.current = event.touches[0]?.clientX ?? null;
+  };
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLElement>) => {
+    const startX = swipeStartX.current;
+    const endX = event.changedTouches[0]?.clientX;
+    swipeStartX.current = null;
+
+    // The panel enters from the left, so a deliberate left swipe dismisses it.
+    if (onClose && startX !== null && endX !== undefined && startX - endX > 64) {
+      onClose();
+    }
+  };
+
   return (
-    <nav className="shrink-0 h-full w-[240px] bg-surface-container flex flex-col border-r border-outline-variant/50">
+    <nav
+      className="shrink-0 h-full w-[280px] md:w-[240px] bg-surface-container flex flex-col border-r border-outline-variant/50"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* Brand */}
       <div className="px-5 pt-5 pb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -57,7 +78,7 @@ export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
         {onClose && (
           <button 
             onClick={onClose}
-            className="md:hidden p-1 rounded-md text-on-surface-variant hover:bg-surface-variant transition-colors"
+            className="touch-target inline-flex items-center justify-center md:hidden rounded-md text-on-surface-variant hover:bg-surface-variant transition-colors"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>

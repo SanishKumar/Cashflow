@@ -18,6 +18,7 @@ import type {
   GroupBalances,
   AuditLogEntry,
   DashboardStats,
+  ReceiptData,
 } from "../types/index";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -143,6 +144,39 @@ async function request<T>(
   return data.data as T;
 }
 
+/** Upload a multipart form while preserving the same JWT refresh behavior as JSON requests. */
+async function upload<T>(url: string, formData: FormData, retryOnAuth = true): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
+  const response = await fetch(`${BASE_URL}${url}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (response.status === 401 && retryOnAuth) {
+    if (!refreshPromise) {
+      refreshPromise = tryRefresh().finally(() => {
+        refreshPromise = null;
+      });
+    }
+    if (await refreshPromise) return upload<T>(url, formData, false);
+
+    clearAuth();
+    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login";
+    }
+    throw new Error("Session expired. Please log in again.");
+  }
+
+  const data: ApiResponse<T> = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || `Request failed with status ${response.status}`);
+  }
+  return data.data as T;
+}
+
 // Auth API (public endpoints)
 export const authApi = {
   register: async (data: { name: string; email: string; password: string }) => {
@@ -195,6 +229,14 @@ export const authApi = {
       }
     }
     clearAuth();
+  },
+
+  restoreSession: async () => {
+    const refreshed = await tryRefresh();
+    if (!refreshed) {
+      throw new Error("Session expired. Please log in again.");
+    }
+    return request<User>("/auth/me", {}, false);
   },
 
   me: () => request<User>("/auth/me"),
@@ -266,6 +308,14 @@ export const transactionApi = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+};
+
+export const receiptApi = {
+  scan: (file: File) => {
+    const formData = new FormData();
+    formData.append("receipt", file);
+    return upload<ReceiptData>("/receipts/scan", formData);
+  },
 };
 
 // Settlement API

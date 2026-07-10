@@ -152,7 +152,7 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
   }
 
   return (
-    <div className="flex-1 relative">
+    <div className="flex-1 min-h-[420px] md:min-h-0 relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}

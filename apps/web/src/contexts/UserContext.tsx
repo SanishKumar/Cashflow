@@ -8,7 +8,7 @@
  * - Auto-refresh: handles transparent token rotation via the API client
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { authApi, setAccessToken, setRefreshToken, getRefreshToken, clearAuth } from "../lib/api";
 
 interface User {
@@ -32,9 +32,13 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 export function UserProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const restoreStarted = useRef(false);
 
   // Restore session from refresh token on mount
   useEffect(() => {
+    if (restoreStarted.current) return;
+    restoreStarted.current = true;
+
     const refreshToken = getRefreshToken();
     if (!refreshToken) {
       setLoading(false);
@@ -44,7 +48,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // Try to restore session by fetching user profile
     // The API client will auto-refresh the access token using the stored refresh token
     authApi
-      .me()
+      .restoreSession()
       .then((user) => {
         setCurrentUser(user);
         setLoading(false);

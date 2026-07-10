@@ -10,12 +10,18 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import App from "./App";
 import "./index.css";
 
+const enableVercelInsights = import.meta.env.PROD;
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
       <App />
-      <Analytics />
-      <SpeedInsights />
+      {enableVercelInsights && (
+        <>
+          <Analytics />
+          <SpeedInsights />
+        </>
+      )}
     </ErrorBoundary>
   </StrictMode>
 );

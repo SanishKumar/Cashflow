@@ -80,8 +80,8 @@ export function LedgerPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-6 pr-6 justify-between bg-surface-container/50 shrink-0">
-        <div className="flex items-center gap-3">
+      <header className="border-b border-outline-variant/30 flex items-center px-4 py-3 md:h-14 md:px-6 md:py-0 justify-end md:justify-between bg-surface-container/50 shrink-0">
+        <div className="hidden md:flex items-center gap-3">
           <span className="material-symbols-outlined text-on-surface-variant text-[20px]">history_edu</span>
           <h2 className="text-[15px] font-semibold text-on-surface">Immutable Audit Log</h2>
           {allTransactions.length > 0 && (
@@ -90,11 +90,11 @@ export function LedgerPage() {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5">
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5 w-full md:w-auto">
             <button
               onClick={() => setTab("transactions")}
-              className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
+              className={`h-8 md:h-7 flex-1 md:flex-none px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
                 tab === "transactions"
                   ? "bg-surface-container-high text-on-surface shadow-sm"
                   : "text-on-surface-variant hover:text-on-surface"
@@ -104,7 +104,7 @@ export function LedgerPage() {
             </button>
             <button
               onClick={() => setTab("audit")}
-              className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
+              className={`h-8 md:h-7 flex-1 md:flex-none px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
                 tab === "audit"
                   ? "bg-surface-container-high text-on-surface shadow-sm"
                   : "text-on-surface-variant hover:text-on-surface"
@@ -113,7 +113,7 @@ export function LedgerPage() {
               Activity
             </button>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1 bg-surface-variant/40 rounded border border-outline-variant/30 text-[11px] text-on-surface-variant font-mono">
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-surface-variant/40 rounded border border-outline-variant/30 text-[11px] text-on-surface-variant font-mono">
             <span className="material-symbols-outlined text-[14px] text-primary">verified_user</span>
             VERIFIED
           </div>
@@ -121,23 +121,23 @@ export function LedgerPage() {
       </header>
 
       {/* Summary Cards */}
-      <div className="px-6 pt-5 pb-3 flex gap-4 shrink-0">
-        <div className="glass-panel-sm p-4 flex-1">
+      <div className="px-4 md:px-6 pt-4 md:pt-5 pb-3 grid grid-cols-3 gap-3 md:flex md:gap-4 shrink-0">
+        <div className="glass-panel-sm p-3 md:p-4 flex-1">
           <span className="text-label text-[10px]">Total Volume</span>
           <div className="text-data-lg text-secondary mt-1">{formatCurrency(totalVolume)}</div>
         </div>
-        <div className="glass-panel-sm p-4 flex-1">
+        <div className="glass-panel-sm p-3 md:p-4 flex-1">
           <span className="text-label text-[10px]">Transactions</span>
           <div className="text-data-lg text-on-surface mt-1">{allTransactions.length}</div>
         </div>
-        <div className="glass-panel-sm p-4 flex-1">
+        <div className="glass-panel-sm p-3 md:p-4 flex-1">
           <span className="text-label text-[10px]">Groups</span>
           <div className="text-data-lg text-on-surface mt-1">{groups?.length ?? 0}</div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto px-6 pb-6">
+      <div className="mobile-scroll-safe flex-1 overflow-auto px-4 md:px-6 pb-6">
         {tab === "transactions" ? (
           <TransactionsView transactions={allTransactions} loading={isLoading} />
         ) : (
@@ -176,7 +176,8 @@ function TransactionsView({ transactions, loading }: { transactions: (Transactio
   }
 
   return (
-    <div className="rounded-lg border border-outline-variant/30 overflow-hidden mt-2">
+    <>
+    <div className="hidden md:block rounded-lg border border-outline-variant/30 overflow-hidden mt-2">
       <div className="grid grid-cols-12 gap-3 px-4 py-2.5 bg-surface-dim border-b border-outline-variant/30">
         <div className="col-span-2 text-label text-[10px]">Date</div>
         <div className="col-span-2 text-label text-[10px]">Tx Hash</div>
@@ -220,6 +221,61 @@ function TransactionsView({ transactions, loading }: { transactions: (Transactio
         </div>
       ))}
     </div>
+    <div className="md:hidden flex flex-col gap-3 mt-2">
+      {transactions.map((tx, i) => (
+        <div
+          key={tx.id}
+          className="rounded-lg border border-outline-variant/30 bg-surface-container p-4 flex flex-col gap-3 animate-slide-up"
+          style={{ animationDelay: `${Math.min(i * 20, 200)}ms` }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold text-on-surface leading-snug">
+                {tx.description}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                {tx.status && (
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wider ${tx.status === 'COMPLETED' ? 'bg-positive/20 text-positive' : tx.status === 'PENDING' ? 'bg-warning/20 text-warning' : 'bg-error/20 text-error'}`}>
+                    {tx.status}
+                  </span>
+                )}
+                <span className="text-[10px] text-primary bg-glow-primary px-2 py-0.5 rounded-full font-medium">
+                  {tx.groupName}
+                </span>
+              </div>
+            </div>
+            <div className="text-data text-secondary font-semibold shrink-0">
+              {formatCurrency(tx.amount, tx.groupCurrency || "USD")}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-[11px] text-on-surface-variant">
+            <div>
+              <span className="text-label text-[9px] block mb-1">Paid By</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`avatar avatar-sm avatar-${i % 6} !w-6 !h-6 !text-[9px]`}>
+                  {getInitials(tx.paidBy.name)}
+                </div>
+                <span className="truncate text-on-surface">{tx.paidBy.name}</span>
+              </div>
+            </div>
+            <div>
+              <span className="text-label text-[9px] block mb-1">Date</span>
+              <span className="text-data text-on-surface-variant text-[11px]">
+                {new Date(tx.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-outline-variant/20">
+            <span className="font-mono text-[10px] text-primary/80 bg-primary/10 px-2 py-1 rounded border border-primary/20">
+              {getTxHash(tx.id)}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+    </>
   );
 }
 

@@ -60,6 +60,17 @@ export function errorHandler(
     return;
   }
 
+  // Multer's upload failures are user-correctable validation errors.
+  if (err.name === "MulterError") {
+    const multerCode = (err as Error & { code?: string }).code;
+    res.status(400).json({
+      success: false,
+      error: multerCode === "LIMIT_FILE_SIZE" ? "Receipt images must be 10MB or smaller" : "Invalid receipt upload",
+      code: multerCode || "UPLOAD_ERROR",
+    });
+    return;
+  }
+
   // Prisma unique constraint violation
   if (err.constructor.name === "PrismaClientKnownRequestError") {
     const prismaErr = err as Error & { code: string; meta?: { target?: string[] } };

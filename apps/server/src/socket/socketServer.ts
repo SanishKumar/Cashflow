@@ -42,14 +42,21 @@ export function initSocketServer(httpServer: HttpServer): TypedServer {
 
     // Join a group room
     socket.on("group:join", (groupId: string) => {
-      socket.join(`group:${groupId}`);
-      console.log(`[SOCKET] ${socket.id} joined group:${groupId}`);
+      const room = `group:${groupId}`;
+      if (socket.rooms.has(room)) return;
+
+      socket.join(room);
+      console.log(`[SOCKET] ${socket.id} joined ${room}`);
     });
 
     // Leave a group room
     socket.on("group:leave", (groupId: string) => {
       socket.leave(`group:${groupId}`);
       console.log(`[SOCKET] ${socket.id} left group:${groupId}`);
+    });
+
+    socket.on("client:ping", (sentAt: number) => {
+      socket.emit("server:pong", sentAt);
     });
 
     socket.on("disconnect", (reason) => {

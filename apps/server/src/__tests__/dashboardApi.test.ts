@@ -32,6 +32,7 @@ vi.mock("../services/authService.js", () => ({
 vi.mock("../middleware/rateLimiter.js", () => ({
   apiLimiter: (_req: any, _res: any, next: any) => next(),
   authLimiter: (_req: any, _res: any, next: any) => next(),
+  receiptScanLimiter: (_req: any, _res: any, next: any) => next(),
 }));
 
 import app from "../app.js";

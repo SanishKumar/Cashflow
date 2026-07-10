@@ -37,6 +37,7 @@ export function GroupDetailPage() {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [liveSettlements, setLiveSettlements] = useState<Settlement[] | null>(null);
   const { currentUserId } = useUser();
 
@@ -108,12 +109,12 @@ export function GroupDetailPage() {
   const totalOwed = currentBalances.filter((b) => b.netBalance > 0).reduce((sum, b) => sum + b.netBalance, 0);
 
   return (
-    <div className="h-full flex flex-row overflow-hidden">
+    <div className="mobile-scroll-safe h-full flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
       {/* ── Center Panel ──────────────────── */}
-      <section className="flex-1 h-full flex flex-col border-r border-outline-variant/30 overflow-hidden min-w-0">
+      <section className="shrink-0 md:flex-1 md:h-full flex flex-col border-r border-outline-variant/30 overflow-hidden min-w-0">
         {/* Header */}
-        <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-5 pr-5 justify-between bg-surface-container/50 shrink-0">
-          <div className="flex items-center gap-3">
+        <header className="h-12 md:h-14 border-b border-outline-variant/30 flex items-center px-4 md:px-5 justify-end md:justify-between bg-surface-container/50 shrink-0">
+          <div className="hidden md:flex items-center gap-3">
             <Link to="/" className="btn-ghost !p-1.5 !h-auto">
               <span className="material-symbols-outlined text-[18px]">arrow_back</span>
             </Link>
@@ -122,8 +123,8 @@ export function GroupDetailPage() {
               <p className="text-[11px] text-on-surface-variant">{group.members.length} members • {transactions?.length ?? 0} transactions</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5">
+          <div className="flex items-center max-w-full">
+            <div className="flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5 overflow-x-auto whitespace-nowrap">
             <button
               onClick={() => setViewMode("ledger")}
               className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
@@ -169,7 +170,7 @@ export function GroupDetailPage() {
         ) : viewMode === "graph" ? (
           <DebtGraph settlements={currentSettlements} members={group.members} currency={group.currency} />
         ) : (
-          <div className="flex-1 overflow-y-auto p-6 max-w-3xl mx-auto w-full space-y-8 animate-fade-in">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 max-w-3xl mx-auto w-full space-y-8 animate-fade-in">
             <section>
               <h3 className="text-[16px] font-bold text-on-surface mb-4">Member Roles</h3>
               <RoleManager group={group} currentUserId={currentUserId} onRoleChanged={refetchGroup} />
@@ -184,9 +185,9 @@ export function GroupDetailPage() {
       </section>
 
       {/* ── Right Panel ───────────────────── */}
-      <aside className="w-[320px] bg-surface-container/30 flex flex-col h-full overflow-y-auto shrink-0">
+      <aside className="w-full md:w-[320px] bg-surface-container/30 flex flex-col md:h-full overflow-y-auto shrink-0 border-t md:border-t-0 border-outline-variant/30">
         {/* Actions */}
-        <div className="p-5 flex flex-col gap-3 border-b border-outline-variant/30">
+        <div className="hidden md:flex p-5 flex-col gap-3 border-b border-outline-variant/30">
           <button onClick={() => setShowExpenseModal(true)} className="btn-primary w-full">
             <span className="material-symbols-outlined text-[16px]">add</span>
             Add Expense
@@ -208,7 +209,7 @@ export function GroupDetailPage() {
         </div>
 
         {/* Balances */}
-        <div className="p-5 flex-1 flex flex-col gap-3">
+        <div className="p-4 md:p-5 flex-1 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <h3 className="text-section-title">Balances</h3>
           </div>
@@ -299,6 +300,37 @@ export function GroupDetailPage() {
         </div>
       </aside>
 
+      <div className="fixed right-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-30 flex flex-col items-end gap-2 md:hidden">
+        {mobileActionsOpen && (
+          <div className="flex flex-col items-end gap-2 animate-slide-up">
+            <button onClick={() => { setShowExpenseModal(true); setMobileActionsOpen(false); }} className="btn-primary shadow-lg">
+              <span className="material-symbols-outlined text-[17px]">add</span>
+              Add Expense
+            </button>
+            <button onClick={() => { setShowSettleModal(true); setMobileActionsOpen(false); }} className="btn-secondary shadow-lg">
+              <span className="material-symbols-outlined text-[17px]">handshake</span>
+              Settle Up
+            </button>
+            <button onClick={() => exportApi.downloadPdf(id!)} className="btn-secondary shadow-lg">
+              <span className="material-symbols-outlined text-[17px]">picture_as_pdf</span>
+              PDF Report
+            </button>
+            <button onClick={() => exportApi.downloadCsv(id!)} className="btn-secondary shadow-lg">
+              <span className="material-symbols-outlined text-[17px]">table_chart</span>
+              CSV Ledger
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setMobileActionsOpen((isOpen) => !isOpen)}
+          aria-label={mobileActionsOpen ? "Close group actions" : "Open group actions"}
+          className="w-14 h-14 rounded-full bg-primary-container text-white shadow-lg shadow-primary/30 flex items-center justify-center transition-transform active:scale-95"
+        >
+          <span className="material-symbols-outlined text-[26px]">{mobileActionsOpen ? "close" : "add"}</span>
+        </button>
+      </div>
+
       {showExpenseModal && <ExpenseModal group={group} onClose={() => setShowExpenseModal(false)} onCreated={handleMutationDone} />}
       {showSettleModal && <SettleUpModal group={group} settlements={currentSettlements} onClose={() => setShowSettleModal(false)} onSettled={handleMutationDone} />}
       {showDeleteModal && <DeleteGroupModal group={group} onClose={() => setShowDeleteModal(false)} />}
@@ -343,7 +375,7 @@ function LedgerView({ transactions, loading, currentUserId, currency, onUpdateSt
   return (
     <div className="flex-1 overflow-auto">
       {/* Column Headers */}
-      <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-outline-variant/30 sticky top-0 bg-surface-dim/80 backdrop-blur-sm z-10">
+      <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3 border-b border-outline-variant/30 sticky top-0 bg-surface-dim/80 backdrop-blur-sm z-10">
         <div className="col-span-2 text-label">Date</div>
         <div className="col-span-4 text-label">Description</div>
         <div className="col-span-3 text-label">Paid By</div>
@@ -356,25 +388,25 @@ function LedgerView({ transactions, loading, currentUserId, currency, onUpdateSt
         {transactions.map((tx, i) => (
           <div
             key={tx.id}
-            className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-outline-variant/20 hover:bg-glass-hover transition-colors animate-slide-up"
+            className="mx-3 my-2 flex flex-col gap-2 rounded-xl border border-outline-variant/30 bg-surface-container p-4 hover:bg-glass-hover transition-colors animate-slide-up md:mx-0 md:my-0 md:grid md:grid-cols-12 md:gap-4 md:rounded-none md:border-0 md:border-b md:border-outline-variant/20 md:bg-transparent md:px-5 md:py-3"
             style={{ animationDelay: `${i * 30}ms` }}
           >
-            <div className="col-span-2 text-data text-on-surface-variant">
+            <div className="order-4 md:order-none col-span-2 text-data text-on-surface-variant">
               {new Date(tx.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
             </div>
-            <div className="col-span-4 text-[13px] font-medium text-on-surface truncate">
+            <div className="order-1 md:order-none col-span-4 text-[14px] md:text-[13px] font-medium text-on-surface truncate">
               {tx.description}
             </div>
-            <div className="col-span-3 flex items-center gap-2">
+            <div className="order-3 md:order-none col-span-3 flex items-center gap-2">
               <div className={`avatar avatar-sm avatar-${i % 6} !w-6 !h-6 !text-[9px]`}>
                 {getInitials(tx.paidBy.name)}
               </div>
               <span className="text-[13px] text-on-surface truncate">{tx.paidBy.name}</span>
             </div>
-            <div className="col-span-2 text-data text-right text-secondary font-semibold">
+            <div className="order-2 self-start md:self-auto col-span-2 text-data text-left md:text-right text-secondary font-semibold">
               {formatCurrency(tx.amount, currency)}
             </div>
-            <div className="col-span-1 text-[12px] text-right">
+            <div className="order-5 md:order-none col-span-1 text-[12px] text-left md:text-right">
               {tx.status === "PENDING" ? (
                 tx.debtShares[0]?.owedById === currentUserId ? (
                   <div className="flex items-center justify-end gap-1">

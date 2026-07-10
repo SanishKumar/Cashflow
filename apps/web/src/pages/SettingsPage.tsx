@@ -16,12 +16,12 @@ export function SettingsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-6 pr-6 bg-surface-container/50 shrink-0">
+      <header className="hidden md:flex h-14 border-b border-outline-variant/30 items-center px-6 bg-surface-container/50 shrink-0">
         <span className="material-symbols-outlined text-on-surface-variant text-[20px] mr-3">tune</span>
         <h2 className="text-[15px] font-semibold text-on-surface">Settings</h2>
       </header>
 
-      <div className="flex-1 overflow-auto px-6 py-6">
+      <div className="mobile-scroll-safe flex-1 overflow-auto px-4 py-4 md:px-6 md:py-6">
         <div className="max-w-2xl flex flex-col gap-6">
           {/* Appearance */}
           <section>
@@ -80,7 +80,7 @@ export function SettingsPage() {
           {/* Database */}
           <section>
             <h3 className="text-section-title mb-4">Infrastructure</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="glass-panel-sm p-4 flex items-start gap-3">
                 <div className="w-10 h-10 rounded-lg bg-glow-primary flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined text-primary text-[20px]">database</span>

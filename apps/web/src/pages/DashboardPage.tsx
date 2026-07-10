@@ -62,16 +62,16 @@ export function DashboardPage() {
   if (loading) {
     return (
       <div className="h-full flex flex-col">
-        <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-6 pr-6 bg-surface-container/50 shrink-0">
+        <header className="hidden md:flex h-14 border-b border-outline-variant/30 items-center px-6 bg-surface-container/50 shrink-0">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-on-surface-variant text-[20px]">space_dashboard</span>
             <h2 className="text-[15px] font-semibold text-on-surface">Dashboard</h2>
           </div>
         </header>
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-4 md:p-6">
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="glass-panel-sm p-5 h-[100px] animate-pulse">
+              <div key={i} className="glass-panel-sm p-3 md:p-5 h-[92px] md:h-[100px] animate-pulse">
                 <div className="h-3 bg-surface-variant rounded w-1/2 mb-3" />
                 <div className="h-5 bg-surface-variant rounded w-1/3" />
               </div>
@@ -102,18 +102,18 @@ export function DashboardPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-6 pr-6 justify-between bg-surface-container/50 shrink-0">
-        <div className="flex items-center gap-3">
+      <header className="h-12 md:h-14 border-b border-outline-variant/30 flex items-center px-4 md:px-6 justify-end md:justify-between bg-surface-container/50 shrink-0">
+        <div className="hidden md:flex items-center gap-3">
           <span className="material-symbols-outlined text-on-surface-variant text-[20px]">space_dashboard</span>
           <h2 className="text-[15px] font-semibold text-on-surface">Dashboard</h2>
         </div>
-        <Link to="/groups" className="btn-primary !h-8 !px-4 !text-[12px]">
-          <span className="material-symbols-outlined text-[14px]">add</span>
-          New Group
+        <Link to="/groups" className="btn-secondary w-full md:w-auto !h-10 !px-5 !text-[13px]">
+          <span className="material-symbols-outlined text-[16px]">groups</span>
+          View Groups
         </Link>
       </header>
 
-      <div className="flex-1 overflow-auto p-6 animate-fade-in">
+      <div className="mobile-scroll-safe flex-1 overflow-auto p-4 md:p-6 animate-fade-in">
         {/* KPI Cards */}
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <KPICard
@@ -188,7 +188,7 @@ function KPICard({
   const c = colorMap[color] ?? colorMap.neutral;
 
   return (
-    <div className="glass-panel-sm p-5 flex flex-col gap-2 group hover:border-outline/50 transition-all duration-200">
+    <div className="glass-panel-sm p-3 md:p-5 flex flex-col gap-2 group hover:border-outline/50 transition-all duration-200">
       <div className="flex items-center justify-between">
         <span className="text-label text-[10px]">{label}</span>
         <div className={`w-7 h-7 rounded-lg ${c.glow} flex items-center justify-center`}>
@@ -223,7 +223,7 @@ function VolumeChart({ data, totalVolume }: { data: MonthlyVolume[]; totalVolume
       </div>
 
       {/* Bar chart */}
-      <div className="flex items-end gap-3 h-[140px]">
+      <div className="flex items-end gap-1.5 sm:gap-3 h-[140px] min-w-0">
         {data.map((d, i) => {
           const heightPct = maxVolume > 0 ? (d.volume / maxVolume) * 100 : 0;
           const isHovered = hoveredIdx === i;
@@ -246,7 +246,7 @@ function VolumeChart({ data, totalVolume }: { data: MonthlyVolume[]; totalVolume
               {/* Bar */}
               <div className="w-full flex justify-center" style={{ height: "140px" }}>
                 <div
-                  className={`w-full max-w-[40px] rounded-t-md transition-all duration-300 ${
+                  className={`w-full min-w-[8px] max-w-[40px] rounded-t-md transition-all duration-300 ${
                     isCurrentMonth
                       ? "bg-gradient-to-t from-primary-container to-primary/80"
                       : isHovered

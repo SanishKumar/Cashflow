@@ -58,8 +58,10 @@ export async function initSolver(): Promise<void> {
       useWasm = false;
     }
   } else {
-    console.log("[SOLVER] WASM binary not found, using TypeScript fallback solver.");
-    console.log(`[SOLVER] Expected at: ${WASM_PATH}`);
+    console.log("[SOLVER] WASM solver not built; using TypeScript fallback solver.");
+    if (process.env.SOLVER_DEBUG === "true") {
+      console.log(`[SOLVER] Expected WASM wrapper at: ${WASM_PATH}`);
+    }
     useWasm = false;
   }
 }

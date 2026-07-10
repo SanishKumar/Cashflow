@@ -112,11 +112,13 @@ export interface ServerToClientEvents {
   "settlements:updated": (settlements: Settlement[]) => void;
   "member:joined": (member: { userId: string; name: string }) => void;
   "member:left": (data: { userId: string }) => void;
+  "server:pong": (sentAt: number) => void;
 }
 
 export interface ClientToServerEvents {
   "group:join": (groupId: string) => void;
   "group:leave": (groupId: string) => void;
+  "client:ping": (sentAt: number) => void;
 }
 
 // ── Composite Types ────────────────────────────

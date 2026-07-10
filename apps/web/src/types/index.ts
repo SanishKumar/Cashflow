@@ -95,6 +95,26 @@ export interface DashboardStats {
   monthlyVolume: MonthlyVolume[];
 }
 
+export interface ReceiptItem {
+  name: string;
+  quantity: number;
+  price: number;
+}
+
+export interface ReceiptData {
+  vendor: string;
+  date: string;
+  total: number;
+  subtotal?: number;
+  tax?: number;
+  tip?: number;
+  currency: string;
+  category: string;
+  items: ReceiptItem[];
+  confidence: number;
+  rawText: string;
+}
+
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;

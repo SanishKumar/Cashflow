@@ -17,6 +17,7 @@ export function GroupsPage() {
   const { currentUserId } = useUser();
   const { data: groups, loading, error, refetch } = useApi<Group[]>(() => groupApi.list());
   const { data: users } = useApi(() => userApi.list());
+  const userList = users ?? [];
   const [showCreate, setShowCreate] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDesc, setNewGroupDesc] = useState("");
@@ -65,8 +66,8 @@ export function GroupsPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <header className="h-14 border-b border-outline-variant/30 flex items-center pl-14 md:px-6 pr-6 justify-between shrink-0 bg-surface-container/50">
-        <div className="flex items-center gap-3">
+      <header className="h-14 border-b border-outline-variant/30 flex items-center px-4 md:px-6 justify-end md:justify-between shrink-0 bg-surface-container/50">
+        <div className="hidden md:flex items-center gap-3">
           <span className="material-symbols-outlined text-on-surface-variant text-[20px]">dashboard</span>
           <h2 className="text-[15px] font-semibold text-on-surface">Groups</h2>
           {filteredGroups && (
@@ -75,15 +76,17 @@ export function GroupsPage() {
             </span>
           )}
         </div>
-        <button onClick={() => setShowCreate(!showCreate)} className="btn-primary">
-          <span className="material-symbols-outlined text-[16px]">add</span>
-          New Group
-        </button>
+        {!showCreate && (
+          <button onClick={() => setShowCreate(true)} className="btn-primary w-full md:w-auto !h-10 !px-5 !text-[13px]">
+            <span className="material-symbols-outlined text-[16px]">add</span>
+            New Group
+          </button>
+        )}
       </header>
 
       {/* Create Group Panel */}
-      {showCreate && (
-        <div className="border-b border-outline-variant/30 p-6 bg-surface-container/30 animate-slide-down">
+      {false && showCreate && (
+        <div className="hidden">
           <div className="max-w-xl flex flex-col gap-4">
             <h3 className="text-[14px] font-semibold text-on-surface">Create New Group</h3>
 
@@ -131,17 +134,17 @@ export function GroupsPage() {
               </select>
             </div>
 
-            {users && users.length > 0 && (
+            {userList.length > 0 && (
               <div className="flex flex-col gap-2">
                 <label className="text-label">Add Members</label>
                 <div className="flex flex-wrap gap-2">
-                  {users.map((user) => (
+                  {userList.map((user) => (
                     <button
                       key={user.id}
                       onClick={() => toggleMember(user.id)}
                       className={`chip ${selectedMembers.includes(user.id) ? "chip-active" : ""}`}
                     >
-                      <span className={`avatar avatar-sm avatar-${users.indexOf(user) % 6} !w-5 !h-5 !text-[9px]`}>
+                      <span className={`avatar avatar-sm avatar-${userList.indexOf(user) % 6} !w-5 !h-5 !text-[9px]`}>
                         {getInitials(user.name)}
                       </span>
                       {user.name}
@@ -171,7 +174,105 @@ export function GroupsPage() {
       )}
 
       {/* Groups Grid */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="mobile-scroll-safe flex-1 overflow-auto p-4 md:p-6">
+        {showCreate && (
+          <div className="mb-5 border border-outline-variant/30 rounded-lg p-4 md:p-5 bg-surface-container/30 animate-slide-down">
+            <div className="max-w-xl flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[14px] font-semibold text-on-surface">Create New Group</h3>
+                <button
+                  type="button"
+                  onClick={() => { setShowCreate(false); setCreateError(null); }}
+                  className="touch-target inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-variant hover:text-on-surface transition-colors"
+                  aria-label="Close create group"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+
+              {createError && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-glow-error border border-error/20 text-error text-[13px]">
+                  <span className="material-symbols-outlined text-[16px]">error</span>
+                  {createError}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-label">Group Name</label>
+                <input
+                  className="input-field"
+                  placeholder="e.g., Engineering Team, Road Trip, Apartment..."
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-label">Description <span className="text-outline">(optional)</span></label>
+                <input
+                  className="input-field"
+                  placeholder="What's this group for?"
+                  value={newGroupDesc}
+                  onChange={(e) => setNewGroupDesc(e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-label">Currency</label>
+                <select
+                  className="input-field"
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                >
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                  <option value="INR">INR</option>
+                  <option value="CAD">CAD</option>
+                  <option value="AUD">AUD</option>
+                </select>
+              </div>
+
+              {userList.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-label">Add Members</label>
+                  <div className="flex flex-wrap gap-2">
+                    {userList.map((user) => (
+                      <button
+                        key={user.id}
+                        onClick={() => toggleMember(user.id)}
+                        className={`chip ${selectedMembers.includes(user.id) ? "chip-active" : ""}`}
+                      >
+                        <span className={`avatar avatar-sm avatar-${userList.indexOf(user) % 6} !w-5 !h-5 !text-[9px]`}>
+                          {getInitials(user.name)}
+                        </span>
+                        {user.name}
+                        {selectedMembers.includes(user.id) && (
+                          <span className="material-symbols-outlined text-[14px]">check</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3 mt-1">
+                <button
+                  onClick={handleCreate}
+                  disabled={creating || !newGroupName.trim()}
+                  className="btn-primary"
+                >
+                  {creating ? "Creating..." : "Create Group"}
+                </button>
+                <button onClick={() => { setShowCreate(false); setCreateError(null); }} className="btn-secondary">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
