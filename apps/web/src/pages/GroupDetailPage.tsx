@@ -235,6 +235,13 @@ export function GroupDetailPage() {
             <span className="text-[11px] text-on-surface-variant mt-1">
               {currentSettlements.length} settlement{currentSettlements.length !== 1 ? "s" : ""} needed
             </span>
+            {balances?.solver && (
+              <span className="text-[10px] text-on-surface-variant mt-1">
+                {balances.solver.exact
+                  ? `Exact minimum · ${balances.solver.activeBalances} active balances`
+                  : `Greedy fallback · ${balances.solver.activeBalances} active balances`}
+              </span>
+            )}
           </div>
 
           {/* Individual */}

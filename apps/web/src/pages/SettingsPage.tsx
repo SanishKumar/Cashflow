@@ -109,13 +109,12 @@ export function SettingsPage() {
             <h3 className="text-section-title mb-4">About</h3>
             <div className="glass-panel-sm p-4">
               <p className="text-[13px] text-on-surface leading-relaxed">
-                <strong>CashFlow</strong> is an enterprise-grade debt minimization platform utilizing a Proprietary Graph Flow Optimization Engine
-                to dynamically compute optimal settlement paths across complex financial networks.
+                <strong>CashFlow</strong> is a public-beta group-expense tracker. It finds the minimum number of payments for groups with up to 12 non-zero balances, then uses a clearly labelled greedy fallback for larger groups.
               </p>
               <div className="flex gap-4 mt-3 pt-3 border-t border-glass-border">
                 <div>
                   <span className="text-[10px] text-on-surface-variant uppercase font-medium">Algorithm</span>
-                  <p className="text-[12px] text-on-surface font-medium mt-0.5">Graph Optimizer (C++ → WASM)</p>
+                  <p className="text-[12px] text-on-surface font-medium mt-0.5">Exact solver + C++ → WASM runtime</p>
                 </div>
                 <div>
                   <span className="text-[10px] text-on-surface-variant uppercase font-medium">Real-Time</span>

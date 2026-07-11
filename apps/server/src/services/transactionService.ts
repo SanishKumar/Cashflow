@@ -6,12 +6,11 @@ import prisma from "../lib/prisma.js";
 import type {
   CreateTransactionInput,
   DebtEdge,
-  Settlement,
   UserBalance,
   GroupBalances,
 } from "../types/api.js";
 import { NotFoundError, AppError } from "../middleware/errorHandler.js";
-import { minimizeDebts } from "./solver.js";
+import { solveDebts } from "../wasm/wasmLoader.js";
 import { broadcastToGroup } from "../socket/socketServer.js";
 
 export class TransactionService {
@@ -217,7 +216,7 @@ export class TransactionService {
    *
    * 1. Fetch all transactions and debt shares from the DB.
    * 2. Build a list of directed debt edges.
-   * 3. Run the Graph Flow solver to minimize the settlement graph.
+   * 3. Run the exact or greedy settlement solver, depending on active balances.
    * 4. Return balances + minimized settlements.
    */
   async getSettlements(groupId: string): Promise<GroupBalances> {
@@ -270,7 +269,7 @@ export class TransactionService {
     }
 
     // Run the solver
-    const settlements: Settlement[] = minimizeDebts(edges, userNames);
+    const solver = await solveDebts(edges, userNames);
 
     // Compute per-user balances
     const balanceMap = new Map<string, number>();
@@ -291,7 +290,13 @@ export class TransactionService {
     return {
       groupId,
       balances,
-      settlements,
+      settlements: solver.settlements,
+      solver: {
+        engine: solver.engine,
+        strategy: solver.strategy,
+        exact: solver.exact,
+        activeBalances: solver.activeBalances,
+      },
     };
   }
 }

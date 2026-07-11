@@ -13,7 +13,12 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
 import type { DebtEdge, Settlement } from "../types/api.js";
-import { minimizeDebts as tsSolver } from "../services/solver.js";
+import {
+  EXACT_SOLVER_ACTIVE_BALANCE_LIMIT,
+  getActiveBalanceCount,
+  solveDebtSettlements,
+  type SolverOutcome,
+} from "../services/solver.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,6 +43,10 @@ interface WasmSolverModule {
 
 let wasmModule: WasmSolverModule | null = null;
 let useWasm = false;
+
+export interface RuntimeSolverOutcome extends SolverOutcome {
+  engine: "wasm" | "typescript";
+}
 
 /**
  * Initialize the WASM solver module.
@@ -76,10 +85,12 @@ export async function initSolver(): Promise<void> {
 export async function solveDebts(
   edges: DebtEdge[],
   userNames: Map<string, string>
-): Promise<Settlement[]> {
+): Promise<RuntimeSolverOutcome> {
+  const activeBalances = getActiveBalanceCount(edges);
+  const exact = activeBalances <= EXACT_SOLVER_ACTIVE_BALANCE_LIMIT;
+
   if (!useWasm || !wasmModule) {
-    // Use TypeScript fallback
-    return tsSolver(edges, userNames);
+    return { ...solveDebtSettlements(edges, userNames), engine: "typescript" };
   }
 
   try {
@@ -106,15 +117,23 @@ export async function solveDebts(
     // Parse WASM output and map indices back to userIds
     const wasmSettlements = JSON.parse(resultJson) as { from: number; to: number; amount: number }[];
 
-    return wasmSettlements.map((s) => ({
+    const settlements: Settlement[] = wasmSettlements.map((s) => ({
       from: userIdList[s.from],
       fromName: userNames.get(userIdList[s.from]) ?? userIdList[s.from],
       to: userIdList[s.to],
       toName: userNames.get(userIdList[s.to]) ?? userIdList[s.to],
       amount: s.amount,
     }));
+
+    return {
+      settlements,
+      strategy: exact ? "exact" : "greedy",
+      exact,
+      activeBalances,
+      engine: "wasm",
+    };
   } catch (err) {
     console.error("[SOLVER] WASM execution failed, falling back to TypeScript:", err);
-    return tsSolver(edges, userNames);
+    return { ...solveDebtSettlements(edges, userNames), engine: "typescript" };
   }
 }

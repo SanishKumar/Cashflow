@@ -4,6 +4,27 @@
 # Stage 2: Production runtime
 # ──────────────────────────────────────────────
 
+# Compile the C++ settlement solver to a Node-compatible WebAssembly module.
+# Pinning the toolchain keeps the generated module reproducible across deploys.
+FROM emscripten/emsdk:3.1.74 AS wasm-builder
+
+WORKDIR /solver
+
+COPY packages/solver/src/ ./src/
+
+RUN mkdir -p dist && \
+    emcc src/solver.cpp \
+      -o dist/solver.js \
+      -s EXPORTED_FUNCTIONS="['_solve','_free_result','_get_version']" \
+      -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap','UTF8ToString']" \
+      -s MODULARIZE=1 \
+      -s EXPORT_NAME="SolverModule" \
+      -s ALLOW_MEMORY_GROWTH=1 \
+      -s ENVIRONMENT="node" \
+      -s NO_EXIT_RUNTIME=1 \
+      -O2 \
+      --no-entry
+
 # Build stage
 FROM node:20-alpine AS builder
 
@@ -24,8 +45,8 @@ RUN npx prisma generate --schema=apps/server/prisma/schema.prisma
 # Copy source code
 COPY apps/server/src/ apps/server/src/
 
-# Copy WASM solver if available
-COPY packages/solver/dist/ packages/solver/dist/ 2>/dev/null || true
+# Bring in the solver built from the committed C++ source.
+COPY --from=wasm-builder /solver/dist/ packages/solver/dist/
 
 # Build TypeScript
 RUN npm run build --workspace=apps/server
@@ -55,8 +76,8 @@ COPY --from=builder /app/node_modules/@prisma node_modules/@prisma
 # Copy compiled JS
 COPY --from=builder /app/apps/server/dist apps/server/dist
 
-# Copy WASM solver binary
-COPY --from=builder /app/packages/solver/dist packages/solver/dist 2>/dev/null || true
+# Copy the generated WASM module used by the server at runtime.
+COPY --from=builder /app/packages/solver/dist/ packages/solver/dist/
 
 ENV NODE_ENV=production
 ENV PORT=4000

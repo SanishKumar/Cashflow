@@ -199,7 +199,7 @@ export class ExportService {
             .fontSize(10)
             .font("Helvetica")
             .fillColor("#666666")
-            .text("The following payments will settle all debts with the minimum number of transactions:")
+            .text("The following payments settle all outstanding balances:")
             .moveDown(0.5)
             .fillColor("#000000");
 

@@ -67,6 +67,12 @@ export interface GroupBalances {
   groupId: string;
   balances: UserBalance[];
   settlements: Settlement[];
+  solver: {
+    engine: "wasm" | "typescript";
+    strategy: "exact" | "greedy";
+    exact: boolean;
+    activeBalances: number;
+  };
 }
 
 export interface AuditLogEntry {

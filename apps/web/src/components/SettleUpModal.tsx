@@ -59,7 +59,7 @@ export function SettleUpModal({ group, settlements, onClose, onSettled }: Settle
             <div>
               <h2 className="text-[15px] font-semibold text-on-surface">Settle Up</h2>
               <p className="text-[11px] text-on-surface-variant">
-                {settlements.length} optimized settlement{settlements.length !== 1 ? "s" : ""}
+                {settlements.length} settlement{settlements.length !== 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -90,7 +90,7 @@ export function SettleUpModal({ group, settlements, onClose, onSettled }: Settle
           ) : (
             <>
               <p className="text-[13px] text-on-surface-variant">
-                The algorithm found the minimum number of payments to settle all debts:
+                These payments settle all outstanding balances:
               </p>
 
               {settlements.map((s, i) => {

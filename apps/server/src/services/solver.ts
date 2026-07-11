@@ -1,163 +1,175 @@
-// ──────────────────────────────────────────────
-// Debt Solver — TypeScript Fallback
-// (Will be replaced by WASM solver in Phase 2)
-// ──────────────────────────────────────────────
-// This is a direct port of the original Graph Flow algorithm
-// from the legacy codebase.
-// Mathematical integrity is preserved exactly.
-// ──────────────────────────────────────────────
-
 import type { DebtEdge, Settlement } from "../types/api.js";
 
 /**
- * Graph Node Heap for [amount, userId] tuples.
- * Identical to the original priority queue,
- * ported to TypeScript with strict typing.
+ * Exact minimum-transfer settlement becomes expensive quickly as the number of
+ * non-zero balances grows. Twelve active balances comfortably covers ordinary
+ * trips and households while keeping the worst-case search bounded.
  */
-class MaxHeap {
-  private heap: [number, string][] = [];
+export const EXACT_SOLVER_ACTIVE_BALANCE_LIMIT = 12;
 
-  insert(value: [number, string]): void {
-    this.heap.push(value);
-    this.bubbleUp();
-  }
+export type SolverStrategy = "exact" | "greedy";
 
-  size(): number {
-    return this.heap.length;
-  }
+export interface SolverOutcome {
+  settlements: Settlement[];
+  strategy: SolverStrategy;
+  exact: boolean;
+  activeBalances: number;
+}
 
-  empty(): boolean {
-    return this.size() === 0;
-  }
+interface CentBalance {
+  userId: string;
+  cents: number;
+}
 
-  extractMax(): [number, string] {
-    const max = this.heap[0];
-    const last = this.heap.pop()!;
-    if (!this.empty()) {
-      this.heap[0] = last;
-      this.sinkDown(0);
-    }
-    return max;
-  }
-
-  private bubbleUp(): void {
-    let index = this.size() - 1;
-
-    while (index > 0) {
-      const element = this.heap[index];
-      const parentIndex = Math.floor((index - 1) / 2);
-      const parent = this.heap[parentIndex];
-
-      if (parent[0] >= element[0]) break;
-
-      this.heap[index] = parent;
-      this.heap[parentIndex] = element;
-      index = parentIndex;
-    }
-  }
-
-  private sinkDown(index: number): void {
-    const left = 2 * index + 1;
-    const right = 2 * index + 2;
-    let largest = index;
-    const length = this.size();
-
-    if (left < length && this.heap[left][0] > this.heap[largest][0]) {
-      largest = left;
-    }
-    if (right < length && this.heap[right][0] > this.heap[largest][0]) {
-      largest = right;
-    }
-
-    if (largest !== index) {
-      const tmp = this.heap[largest];
-      this.heap[largest] = this.heap[index];
-      this.heap[index] = tmp;
-      this.sinkDown(largest);
-    }
-  }
+interface CentSettlement {
+  from: string;
+  to: string;
+  cents: number;
 }
 
 /**
- * Core debt minimization algorithm using Graph Flow heuristics.
- *
- * Algorithm (preserving original logic from script.js):
- * 1. Compute net balance for each person from all debt edges.
- * 2. Split into positive (creditors) and negative (debtors) priority queues.
- * 3. Greedily match largest creditor with largest debtor (DSU heuristic).
- * 4. Settle min(credit, debt) and re-insert remainder.
- * 5. Repeat until both heaps are empty.
- *
- * Time complexity: O(N log N) where N = number of unique users.
- * This produces an optimal settlement with at most N-1 transactions.
- *
- * @param edges - Array of directed debt edges {from, to, amount}
- * @param userNames - Map of userId to display name (for output)
- * @returns Array of minimized settlements
+ * Builds net balances in integer cents. The database currently stores amounts
+ * as floating-point values, so converting at this boundary prevents rounding
+ * noise from changing the solver's decisions.
  */
-export function minimizeDebts(
-  edges: DebtEdge[],
-  userNames: Map<string, string>
-): Settlement[] {
-  if (edges.length === 0) return [];
-
-  // Step 1: Compute net balance per user
+function getCentBalances(edges: DebtEdge[]): CentBalance[] {
   const balances = new Map<string, number>();
 
   for (const edge of edges) {
-    balances.set(edge.to, (balances.get(edge.to) ?? 0) + edge.amount);
-    balances.set(edge.from, (balances.get(edge.from) ?? 0) - edge.amount);
+    const cents = Math.round(edge.amount * 100);
+    if (cents === 0) continue;
+
+    balances.set(edge.from, (balances.get(edge.from) ?? 0) - cents);
+    balances.set(edge.to, (balances.get(edge.to) ?? 0) + cents);
   }
 
-  // Step 2: Split into creditor (positive) and debtor (negative) heaps
-  const creditorHeap = new MaxHeap();
-  const debtorHeap = new MaxHeap();
+  return [...balances]
+    .filter(([, cents]) => cents !== 0)
+    .map(([userId, cents]) => ({ userId, cents }))
+    .sort((a, b) => a.userId.localeCompare(b.userId));
+}
 
-  for (const [userId, balance] of balances) {
-    if (balance > 0) {
-      creditorHeap.insert([balance, userId]);
-    } else if (balance < 0) {
-      debtorHeap.insert([-balance, userId]); // store as positive for max-heap
+export function getActiveBalanceCount(edges: DebtEdge[]): number {
+  return getCentBalances(edges).length;
+}
+
+/**
+ * Exhaustively tries every maximal debtor/creditor settlement. A non-maximal
+ * payment can always be increased until one side is settled without adding a
+ * transfer, so searching maximal payments is sufficient to find the true
+ * minimum transfer count.
+ */
+function solveExactly(balances: CentBalance[]): CentSettlement[] {
+  const amounts = balances.map((balance) => balance.cents);
+  const seenDepth = new Map<string, number>();
+  const current: CentSettlement[] = [];
+  let best: CentSettlement[] | null = null;
+
+  const search = (): void => {
+    if (best && current.length >= best.length) return;
+
+    const index = amounts.findIndex((amount) => amount !== 0);
+    if (index === -1) {
+      best = current.map((settlement) => ({ ...settlement }));
+      return;
     }
-  }
 
-  // Step 3: Greedily match and settle
-  const settlements: Settlement[] = [];
-  const remainders = new Map<string, number>();
+    const key = amounts.join(",");
+    const previousDepth = seenDepth.get(key);
+    if (previousDepth !== undefined && previousDepth <= current.length) return;
+    seenDepth.set(key, current.length);
 
-  // Initialize remainders from balances
-  for (const [userId, balance] of balances) {
-    remainders.set(userId, Math.abs(balance));
-  }
+    const sourceAmount = amounts[index];
+    const attemptedCounterpartAmounts = new Set<number>();
 
-  while (!creditorHeap.empty() && !debtorHeap.empty()) {
-    const [creditAmt, creditorId] = creditorHeap.extractMax();
-    const [debtAmt, debtorId] = debtorHeap.extractMax();
+    for (let counterpart = 0; counterpart < amounts.length; counterpart += 1) {
+      const counterpartAmount = amounts[counterpart];
+      if (sourceAmount * counterpartAmount >= 0) continue;
 
-    const settleAmount = Math.min(creditAmt, debtAmt);
+      // Equal balances are interchangeable for the purpose of minimizing the
+      // number of payments; avoiding duplicates makes the exact search faster.
+      if (attemptedCounterpartAmounts.has(counterpartAmount)) continue;
+      attemptedCounterpartAmounts.add(counterpartAmount);
 
-    settlements.push({
-      from: debtorId,
-      fromName: userNames.get(debtorId) ?? debtorId,
-      to: creditorId,
-      toName: userNames.get(creditorId) ?? creditorId,
-      amount: Math.round(settleAmount * 100) / 100, // round to cents
-    });
+      const cents = Math.min(Math.abs(sourceAmount), Math.abs(counterpartAmount));
+      const from = sourceAmount < 0 ? balances[index].userId : balances[counterpart].userId;
+      const to = sourceAmount < 0 ? balances[counterpart].userId : balances[index].userId;
 
-    // Update remainders
-    const newCredit = creditAmt - settleAmount;
-    const newDebt = debtAmt - settleAmount;
+      const originalSource = amounts[index];
+      const originalCounterpart = amounts[counterpart];
+      amounts[index] += sourceAmount < 0 ? cents : -cents;
+      amounts[counterpart] += counterpartAmount < 0 ? cents : -cents;
+      current.push({ from, to, cents });
 
-    remainders.set(creditorId, newCredit);
-    remainders.set(debtorId, newDebt);
+      search();
 
-    if (newCredit > 0.01) {
-      creditorHeap.insert([newCredit, creditorId]);
+      current.pop();
+      amounts[index] = originalSource;
+      amounts[counterpart] = originalCounterpart;
     }
-    if (newDebt > 0.01) {
-      debtorHeap.insert([newDebt, debtorId]);
-    }
+  };
+
+  search();
+  return best ?? [];
+}
+
+/**
+ * Deterministic, fast fallback for unusually large groups. It preserves every
+ * net balance and needs at most N - 1 payments, but it does not claim to be
+ * the global minimum number of payments.
+ */
+function solveGreedily(balances: CentBalance[]): CentSettlement[] {
+  const debtors = balances
+    .filter((balance) => balance.cents < 0)
+    .map((balance) => ({ userId: balance.userId, cents: -balance.cents }));
+  const creditors = balances
+    .filter((balance) => balance.cents > 0)
+    .map((balance) => ({ userId: balance.userId, cents: balance.cents }));
+  const settlements: CentSettlement[] = [];
+
+  while (debtors.length > 0 && creditors.length > 0) {
+    debtors.sort((a, b) => b.cents - a.cents || a.userId.localeCompare(b.userId));
+    creditors.sort((a, b) => b.cents - a.cents || a.userId.localeCompare(b.userId));
+
+    const debtor = debtors[0];
+    const creditor = creditors[0];
+    const cents = Math.min(debtor.cents, creditor.cents);
+
+    settlements.push({ from: debtor.userId, to: creditor.userId, cents });
+    debtor.cents -= cents;
+    creditor.cents -= cents;
+
+    if (debtor.cents === 0) debtors.shift();
+    if (creditor.cents === 0) creditors.shift();
   }
 
   return settlements;
+}
+
+export function solveDebtSettlements(
+  edges: DebtEdge[],
+  userNames: Map<string, string>
+): SolverOutcome {
+  const balances = getCentBalances(edges);
+  const activeBalances = balances.length;
+  const exact = activeBalances <= EXACT_SOLVER_ACTIVE_BALANCE_LIMIT;
+  const centSettlements = exact ? solveExactly(balances) : solveGreedily(balances);
+
+  return {
+    settlements: centSettlements.map((settlement) => ({
+      from: settlement.from,
+      fromName: userNames.get(settlement.from) ?? settlement.from,
+      to: settlement.to,
+      toName: userNames.get(settlement.to) ?? settlement.to,
+      amount: settlement.cents / 100,
+    })),
+    strategy: exact ? "exact" : "greedy",
+    exact,
+    activeBalances,
+  };
+}
+
+/** Backwards-compatible settlement-only API for existing callers and tests. */
+export function minimizeDebts(edges: DebtEdge[], userNames: Map<string, string>): Settlement[] {
+  return solveDebtSettlements(edges, userNames).settlements;
 }

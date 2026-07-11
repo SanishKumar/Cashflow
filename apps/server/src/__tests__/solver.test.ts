@@ -6,7 +6,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { minimizeDebts } from "../services/solver.js";
+import {
+  EXACT_SOLVER_ACTIVE_BALANCE_LIMIT,
+  minimizeDebts,
+  solveDebtSettlements,
+} from "../services/solver.js";
 import type { DebtEdge } from "../types/api.js";
 
 describe("minimizeDebts", () => {
@@ -54,6 +58,45 @@ describe("minimizeDebts", () => {
     // Total settlement amount should equal 20 (the net flow)
     const totalSettled = result.reduce((sum, s) => sum + s.amount, 0);
     expect(totalSettled).toBe(20);
+  });
+
+  it("finds the true minimum when greedy matching would use an extra payment", () => {
+    // Net balances: A=-7, B=-6, C=+2, D=+5, E=+6.
+    // A max-heap greedy matcher makes four payments by pairing 7 with 6 first.
+    // The exact answer is three: A→C ($2), A→D ($5), B→E ($6).
+    const edges: DebtEdge[] = [
+      { from: "A", to: "C", amount: 2 },
+      { from: "A", to: "D", amount: 5 },
+      { from: "B", to: "E", amount: 6 },
+    ];
+    const names = new Map(["A", "B", "C", "D", "E"].map((id) => [id, id]));
+
+    const result = solveDebtSettlements(edges, names);
+
+    expect(result.exact).toBe(true);
+    expect(result.strategy).toBe("exact");
+    expect(result.activeBalances).toBe(5);
+    expect(result.settlements).toHaveLength(3);
+  });
+
+  it("uses the documented greedy fallback beyond the exact-solver limit", () => {
+    const edges: DebtEdge[] = [];
+    const names = new Map<string, string>();
+
+    for (let i = 0; i < EXACT_SOLVER_ACTIVE_BALANCE_LIMIT + 1; i += 1) {
+      const debtor = `debtor-${i}`;
+      const creditor = `creditor-${i}`;
+      names.set(debtor, debtor);
+      names.set(creditor, creditor);
+      edges.push({ from: debtor, to: creditor, amount: 1 });
+    }
+
+    const result = solveDebtSettlements(edges, names);
+
+    expect(result.exact).toBe(false);
+    expect(result.strategy).toBe("greedy");
+    expect(result.activeBalances).toBe((EXACT_SOLVER_ACTIVE_BALANCE_LIMIT + 1) * 2);
+    expect(result.settlements.length).toBeLessThanOrEqual(result.activeBalances - 1);
   });
 
   it("returns zero settlements when all debts cancel out", () => {

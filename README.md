@@ -1,21 +1,20 @@
-# CashFlow Management v3.0
+# CashFlow (public beta)
 
 🚀 **Live Demo:** [https://cashflow-phi-amber.vercel.app/](https://cashflow-phi-amber.vercel.app/)
 
-> The open-source, developer-friendly debt platform with the most transparent algorithm, real-time graph visualization, and enterprise-grade permissions — for people who care about how their financial tools actually work.
+> An open-source group-expense tracker that turns net balances into a clear settlement plan.
+
+> **Beta notice:** CashFlow is still under active development. Do not use it for sensitive or real-world financial data until the security and privacy documentation is complete.
 
 ## Key Features
 
-- **Real-Time Debt Minimization**: Automatically calculates the most efficient settlement paths using a C++ WASM solver.
-- **Enterprise-Grade Security**: Stateless JWT Authentication paired with PostgreSQL-backed session tracking, providing immediate token revocation.
-- **Role-Based Access Control (RBAC)**: Fine-grained permissions featuring `ADMIN`, `MEMBER`, and read-only `AUDITOR` roles.
-- **Production Hardened**: Distributed Upstash Redis rate limiters, structured JSON logging, and cursor-based pagination for high-throughput endpoints.
-- **Immutable Audit Trails**: Paginated, verifiable logs tracking all critical group actions (expenses, role changes, settlements).
-- **Data Export Pipeline**: One-click generation of PDF summary reports and CSV ledgers via `pdfkit` and `csv-stringify`.
-- **Glassmorphic UI**: Premium, modern interface built with Tailwind CSS v4, featuring micro-animations and responsive layouts.
-- **Interactive Graphs**: Visualizes the flow of debts using React Flow with real-time WebSockets synchronization.
-- **Receipt Scanning**: Server-side OCR.space Engine 3 scanning, with a local Tesseract fallback when the provider is unavailable.
-- **Multi-Currency Support**: Real-time dynamic exchange rate conversion via Frankfurter API.
+- **Exact settlement for typical groups**: Finds the mathematically minimum number of payments when there are up to 12 people with non-zero balances.
+- **Safe large-group fallback**: Uses a deterministic greedy algorithm for larger groups; it settles every balance in at most `N - 1` payments without claiming global optimality.
+- **C++ → WebAssembly in production**: The container build compiles the settlement solver from C++ source, then the Node.js server executes that module. TypeScript mirrors the algorithm as a development fallback.
+- **Accounts and roles**: JWT-based authentication, refresh-token rotation, and `ADMIN`, `MEMBER`, and read-only `AUDITOR` group roles.
+- **Group tools**: Expense entry, settlement views, CSV/PDF exports, activity logs, and an interactive debt graph.
+- **Receipt assistance**: Optional OCR receipt parsing with a local fallback. See the privacy documentation before enabling third-party OCR for real data.
+- **Multi-currency input**: Converts supported currencies through Frankfurter when an expense is added.
 
 ## Screenshots
 | | |
@@ -44,7 +43,7 @@ graph TD
         WS_S["Socket.io Server"]
         Audit["Structured Audit Logger"]
         Export["Export Service\n(CSV + PDF)"]
-        Solver["C++ WASM\nGraph Flow Solver"]
+        Solver["C++ → WASM\nSettlement Solver"]
         Cur["Frankfurter API\nCurrency Converter"]
     end
 
@@ -140,27 +139,16 @@ docker compose up --build
 - Backend: http://localhost:4000
 - API Health: http://localhost:4000/api/health
 
-### Production Deployment Notes
-If deploying to free-tier services like Render and Neon, we recommend setting up an external cron-job via `cron-job.org` to ping `/api/groups` every 14 minutes. This prevents the server and database from spinning down during periods of inactivity, preventing high-latency cold starts.
 
 ## Core Algorithm
 
-The debt minimization utilizes an **Optimized Directed Graph Minimization Engine** to dynamically compute the most efficient settlement paths in real-time.
+CashFlow first converts every expense into a net balance for each group member. Settlement is then calculated in integer cents, so floating-point noise does not influence the plan.
 
-1. Compute net balance per entity across the financial network.
-2. Construct dynamic flow graphs for positive (credit) and negative (debt) edges.
-3. Greedily resolve multi-layered debt networks using advanced Disjoint Set Union (DSU) heuristics.
-4. Settle optimized paths and dynamically re-evaluate the graph for non-linear cycles.
-5. Produces optimal **O(N-1)** minimum-edge settlement paths.
+1. For **up to 12 non-zero balances**, the solver exhaustively searches maximal debtor/creditor pairings and returns a plan with the mathematically minimum number of payments.
+2. For **more than 12 non-zero balances**, it uses a deterministic greedy matcher. That plan is valid and uses at most `N - 1` payments, but it is not described as globally minimal.
+3. Production containers compile and run the same strategy in C++/WebAssembly. The TypeScript implementation is a behavior-matched fallback for local development or a failed WASM load.
 
-Performance Benchmarks (Ops/sec on standard hardware):
-- **10 users (14 edges):** ~291,000 ops/sec
-- **50 users (497 edges):** ~19,500 ops/sec
-- **100 users (2011 edges):** ~5,600 ops/sec
-- **500 users (49k edges):** ~220 ops/sec
-- **1000 users (199k edges):** ~53 ops/sec
-
-Highly optimized for large-scale enterprise data — handles dense networks of 1,000 entities in <20ms.
+The 12-person exact limit is intentional: finding a global minimum is computationally expensive at arbitrary scale. The response includes the strategy used so the application can present it honestly.
 
 ## API Endpoints
 
@@ -178,7 +166,7 @@ Highly optimized for large-scale enterprise data — handles dense networks of 1
 | GET | `/api/groups/:id/settlements` | Compute minimized debts |
 | GET | `/api/groups/:id/exports/csv` | Download CSV Ledger |
 | GET | `/api/groups/:id/exports/pdf` | Download PDF Summary |
-| GET | `/api/audit-logs` | Global immutable audit logs |
+| GET | `/api/audit-logs` | Paginated activity logs for the authenticated user's groups |
 
 ## Project Structure
 

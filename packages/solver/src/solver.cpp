@@ -1,21 +1,21 @@
-// ──────────────────────────────────────────────────────────
-// CashFlow Debt Minimization Solver — C++ Core
-// ──────────────────────────────────────────────────────────
-// High-performance implementation of the Max Heap debt
-// minimization algorithm. Compiled to WebAssembly via
-// Emscripten for cross-platform portability.
+// CashFlow settlement solver, compiled to WebAssembly with Emscripten.
 //
-// Algorithm origin: Codeforces 1266D (Decreasing Debts)
-// Mathematical integrity preserved from original JS impl.
-// ──────────────────────────────────────────────────────────
+// The solver calculates net balances in integer cents. For ordinary groups
+// (up to 12 non-zero balances) it exhaustively finds the minimum possible
+// number of payments. Larger groups use a deterministic greedy fallback that
+// preserves every balance in at most N - 1 payments.
 
-#include <vector>
-#include <queue>
-#include <string>
+#include <algorithm>
 #include <cmath>
-#include <sstream>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <queue>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -23,7 +23,9 @@
 #define EMSCRIPTEN_KEEPALIVE
 #endif
 
-// ── Data Structures ────────────────────────────────────
+namespace {
+
+constexpr int EXACT_SOLVER_ACTIVE_BALANCE_LIMIT = 12;
 
 struct Edge {
     int from;
@@ -37,209 +39,211 @@ struct Settlement {
     double amount;
 };
 
-// ── JSON Parser (minimal, no external deps) ────────────
-
-// Simple JSON array parser for input format:
-// [{"from":0,"to":1,"amount":100.5},...]
+// Minimal parser for [{"from":0,"to":1,"amount":100.5}, ...].
 static std::vector<Edge> parse_edges(const char* json) {
     std::vector<Edge> edges;
     const char* p = json;
-    
-    // Find first '['
+
     while (*p && *p != '[') p++;
     if (!*p) return edges;
     p++;
-    
+
     while (*p) {
-        // Find next '{'
         while (*p && *p != '{' && *p != ']') p++;
         if (!*p || *p == ']') break;
         p++;
-        
+
         Edge edge = {0, 0, 0.0};
-        
-        // Parse key-value pairs in this object
         while (*p && *p != '}') {
-            // Find key
             while (*p && *p != '"') p++;
             if (!*p) break;
             p++;
-            
-            // Read key name
+
             std::string key;
-            while (*p && *p != '"') {
-                key += *p;
-                p++;
-            }
+            while (*p && *p != '"') key += *p++;
             if (!*p) break;
             p++;
-            
-            // Find ':'
+
             while (*p && *p != ':') p++;
             if (!*p) break;
             p++;
-            
-            // Skip whitespace
             while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
-            
-            // Read value (number)
-            std::string val;
+
+            std::string value;
             while (*p && *p != ',' && *p != '}') {
-                if (*p != ' ' && *p != '\t' && *p != '\n' && *p != '\r') {
-                    val += *p;
-                }
+                if (*p != ' ' && *p != '\t' && *p != '\n' && *p != '\r') value += *p;
                 p++;
             }
-            
-            if (key == "from") {
-                edge.from = std::atoi(val.c_str());
-            } else if (key == "to") {
-                edge.to = std::atoi(val.c_str());
-            } else if (key == "amount") {
-                edge.amount = std::atof(val.c_str());
-            }
+
+            if (key == "from") edge.from = std::atoi(value.c_str());
+            else if (key == "to") edge.to = std::atoi(value.c_str());
+            else if (key == "amount") edge.amount = std::atof(value.c_str());
         }
-        
+
         if (*p == '}') p++;
-        
         edges.push_back(edge);
     }
-    
+
     return edges;
 }
 
-// ── Core Solver ────────────────────────────────────────
+static std::string state_key(const std::vector<long long>& balances) {
+    std::ostringstream stream;
+    for (const long long balance : balances) stream << balance << ',';
+    return stream.str();
+}
 
-/**
- * Minimize debts using Max Heap greedy algorithm.
- *
- * Algorithm:
- * 1. Compute net balance for each node from directed edges.
- * 2. Separate into creditor max-heap (positive) and debtor max-heap (negative).
- * 3. Greedily match: extract max creditor and max debtor.
- * 4. Settle min(credit, debt), re-insert remainder.
- * 5. Continue until both heaps are empty.
- *
- * Produces optimal O(N-1) settlement graph.
- * Time complexity: O(E + N log N)
- */
-static std::vector<Settlement> solve_debts(const std::vector<Edge>& edges, int num_nodes) {
+static void search_exact(
+    std::vector<long long>& balances,
+    std::vector<Settlement>& current,
+    std::vector<Settlement>& best,
+    int& best_count,
+    std::unordered_map<std::string, int>& seen_depth
+) {
+    if (static_cast<int>(current.size()) >= best_count) return;
+
+    int index = -1;
+    for (int i = 0; i < static_cast<int>(balances.size()); i++) {
+        if (balances[i] != 0) {
+            index = i;
+            break;
+        }
+    }
+
+    if (index == -1) {
+        best = current;
+        best_count = static_cast<int>(current.size());
+        return;
+    }
+
+    const std::string key = state_key(balances);
+    const auto prior = seen_depth.find(key);
+    if (prior != seen_depth.end() && prior->second <= static_cast<int>(current.size())) return;
+    seen_depth[key] = static_cast<int>(current.size());
+
+    const long long source_amount = balances[index];
+    std::unordered_set<long long> attempted_counterpart_amounts;
+
+    for (int counterpart = 0; counterpart < static_cast<int>(balances.size()); counterpart++) {
+        const long long counterpart_amount = balances[counterpart];
+        if (source_amount * counterpart_amount >= 0) continue;
+        if (!attempted_counterpart_amounts.insert(counterpart_amount).second) continue;
+
+        const long long cents = std::min(std::llabs(source_amount), std::llabs(counterpart_amount));
+        const int from = source_amount < 0 ? index : counterpart;
+        const int to = source_amount < 0 ? counterpart : index;
+
+        balances[index] += source_amount < 0 ? cents : -cents;
+        balances[counterpart] += counterpart_amount < 0 ? cents : -cents;
+        current.push_back({from, to, static_cast<double>(cents) / 100.0});
+
+        search_exact(balances, current, best, best_count, seen_depth);
+
+        current.pop_back();
+        balances[index] = source_amount;
+        balances[counterpart] = counterpart_amount;
+    }
+}
+
+static std::vector<Settlement> solve_exactly(std::vector<long long> balances) {
+    std::vector<Settlement> current;
+    std::vector<Settlement> best;
+    std::unordered_map<std::string, int> seen_depth;
+    int best_count = std::numeric_limits<int>::max();
+
+    search_exact(balances, current, best, best_count, seen_depth);
+    return best;
+}
+
+static std::vector<Settlement> solve_greedily(const std::vector<long long>& balances) {
+    using HeapEntry = std::pair<long long, int>;
+    std::priority_queue<HeapEntry> creditors;
+    std::priority_queue<HeapEntry> debtors;
     std::vector<Settlement> settlements;
-    
-    if (edges.empty() || num_nodes <= 0) return settlements;
-    
-    // Step 1: Compute net balances
-    std::vector<double> balances(num_nodes, 0.0);
-    
-    for (const auto& edge : edges) {
-        if (edge.from >= 0 && edge.from < num_nodes &&
-            edge.to >= 0 && edge.to < num_nodes) {
-            balances[edge.to] += edge.amount;
-            balances[edge.from] -= edge.amount;
-        }
+
+    for (int i = 0; i < static_cast<int>(balances.size()); i++) {
+        if (balances[i] > 0) creditors.push({balances[i], i});
+        else if (balances[i] < 0) debtors.push({-balances[i], i});
     }
-    
-    // Step 2: Build max heaps
-    // pair<amount, node_index>
-    using HeapEntry = std::pair<double, int>;
-    std::priority_queue<HeapEntry> creditor_heap; // positive balances
-    std::priority_queue<HeapEntry> debtor_heap;   // negative balances (stored positive)
-    
-    for (int i = 0; i < num_nodes; i++) {
-        if (balances[i] > 0.01) {
-            creditor_heap.push({balances[i], i});
-        } else if (balances[i] < -0.01) {
-            debtor_heap.push({-balances[i], i});
-        }
+
+    while (!creditors.empty() && !debtors.empty()) {
+        const auto [credit, creditor] = creditors.top();
+        creditors.pop();
+        const auto [debt, debtor] = debtors.top();
+        debtors.pop();
+
+        const long long cents = std::min(credit, debt);
+        settlements.push_back({debtor, creditor, static_cast<double>(cents) / 100.0});
+
+        if (credit > cents) creditors.push({credit - cents, creditor});
+        if (debt > cents) debtors.push({debt - cents, debtor});
     }
-    
-    // Step 3: Greedy matching
-    while (!creditor_heap.empty() && !debtor_heap.empty()) {
-        auto [credit_amt, creditor_id] = creditor_heap.top();
-        creditor_heap.pop();
-        auto [debt_amt, debtor_id] = debtor_heap.top();
-        debtor_heap.pop();
-        
-        double settle = std::min(credit_amt, debt_amt);
-        
-        // Round to cents
-        settle = std::round(settle * 100.0) / 100.0;
-        
-        if (settle > 0.01) {
-            settlements.push_back({debtor_id, creditor_id, settle});
-        }
-        
-        double new_credit = credit_amt - settle;
-        double new_debt = debt_amt - settle;
-        
-        if (new_credit > 0.01) {
-            creditor_heap.push({new_credit, creditor_id});
-        }
-        if (new_debt > 0.01) {
-            debtor_heap.push({new_debt, debtor_id});
-        }
-    }
-    
+
     return settlements;
 }
 
-// ── JSON Serializer ────────────────────────────────────
+static std::vector<Settlement> solve_debts(const std::vector<Edge>& edges, int num_nodes) {
+    if (edges.empty() || num_nodes <= 0) return {};
 
-static std::string settlements_to_json(const std::vector<Settlement>& settlements) {
-    std::ostringstream oss;
-    oss << "[";
-    for (size_t i = 0; i < settlements.size(); i++) {
-        if (i > 0) oss << ",";
-        oss << "{\"from\":" << settlements[i].from
-            << ",\"to\":" << settlements[i].to
-            << ",\"amount\":" << std::round(settlements[i].amount * 100.0) / 100.0
-            << "}";
+    std::vector<long long> balances(num_nodes, 0);
+    for (const auto& edge : edges) {
+        if (edge.from < 0 || edge.from >= num_nodes || edge.to < 0 || edge.to >= num_nodes) continue;
+        const long long cents = std::llround(edge.amount * 100.0);
+        balances[edge.from] -= cents;
+        balances[edge.to] += cents;
     }
-    oss << "]";
-    return oss.str();
+
+    const int active_balances = static_cast<int>(std::count_if(
+        balances.begin(), balances.end(), [](long long balance) { return balance != 0; }
+    ));
+
+    if (active_balances <= EXACT_SOLVER_ACTIVE_BALANCE_LIMIT) return solve_exactly(balances);
+    return solve_greedily(balances);
 }
 
-// ── Exported WASM Functions ────────────────────────────
+static std::string settlements_to_json(const std::vector<Settlement>& settlements) {
+    std::ostringstream stream;
+    stream << "[";
+    for (size_t i = 0; i < settlements.size(); i++) {
+        if (i > 0) stream << ",";
+        stream << "{\"from\":" << settlements[i].from
+               << ",\"to\":" << settlements[i].to
+               << ",\"amount\":" << std::round(settlements[i].amount * 100.0) / 100.0
+               << "}";
+    }
+    stream << "]";
+    return stream.str();
+}
 
 static char* last_result = nullptr;
 
-/**
- * Main solver entry point.
- *
- * @param json_input  JSON string: {"edges":[{from,to,amount},...], "numNodes": N}
- * @return            JSON string: [{from,to,amount},...]
- *
- * The caller must free the result via free_result().
- */
+} // namespace
+
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE
 const char* solve(const char* json_input) {
-    // Free previous result
     if (last_result) {
-        free(last_result);
+        std::free(last_result);
         last_result = nullptr;
     }
-    
-    // Parse numNodes from input
+
     int num_nodes = 0;
-    const char* nn = strstr(json_input, "\"numNodes\"");
-    if (nn) {
-        nn = strchr(nn, ':');
-        if (nn) {
-            nn++;
-            while (*nn == ' ' || *nn == '\t') nn++;
-            num_nodes = atoi(nn);
+    const char* number_of_nodes = std::strstr(json_input, "\"numNodes\"");
+    if (number_of_nodes) {
+        number_of_nodes = std::strchr(number_of_nodes, ':');
+        if (number_of_nodes) {
+            number_of_nodes++;
+            while (*number_of_nodes == ' ' || *number_of_nodes == '\t') number_of_nodes++;
+            num_nodes = std::atoi(number_of_nodes);
         }
     }
-    
-    // Parse edges array
-    const char* edges_start = strstr(json_input, "\"edges\"");
+
+    const char* edges_start = std::strstr(json_input, "\"edges\"");
     std::vector<Edge> edges;
     if (edges_start) {
-        edges_start = strchr(edges_start, '[');
+        edges_start = std::strchr(edges_start, '[');
         if (edges_start) {
-            // Find matching ']'
             int depth = 0;
             const char* edges_end = edges_start;
             do {
@@ -247,101 +251,42 @@ const char* solve(const char* json_input) {
                 else if (*edges_end == ']') depth--;
                 edges_end++;
             } while (depth > 0 && *edges_end);
-            
-            std::string edges_json(edges_start, edges_end);
+
+            const std::string edges_json(edges_start, edges_end);
             edges = parse_edges(edges_json.c_str());
         }
     } else {
-        // Try parsing the entire input as an edge array
         edges = parse_edges(json_input);
-        // Infer num_nodes from edges
-        for (const auto& e : edges) {
-            num_nodes = std::max(num_nodes, std::max(e.from, e.to) + 1);
-        }
+        for (const auto& edge : edges) num_nodes = std::max(num_nodes, std::max(edge.from, edge.to) + 1);
     }
-    
-    // Solve
-    auto settlements = solve_debts(edges, num_nodes);
-    
-    // Serialize
-    std::string result = settlements_to_json(settlements);
-    
-    // Allocate and copy result
-    last_result = (char*)malloc(result.size() + 1);
-    if (last_result) {
-        memcpy(last_result, result.c_str(), result.size() + 1);
-    }
-    
+
+    const std::string result = settlements_to_json(solve_debts(edges, num_nodes));
+    last_result = static_cast<char*>(std::malloc(result.size() + 1));
+    if (last_result) std::memcpy(last_result, result.c_str(), result.size() + 1);
     return last_result;
 }
 
 EMSCRIPTEN_KEEPALIVE
 void free_result() {
     if (last_result) {
-        free(last_result);
+        std::free(last_result);
         last_result = nullptr;
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
 int get_version() {
-    return 200; // v2.0.0
+    return 201; // v2.1.0
 }
 
 } // extern "C"
-
-// ── Native Test Main (not compiled for WASM) ───────────
 
 #ifndef __EMSCRIPTEN__
 #include <iostream>
 
 int main() {
-    // Test 1: Simple 3-person cycle
-    {
-        const char* input = R"({"edges":[{"from":0,"to":1,"amount":100},{"from":1,"to":2,"amount":100},{"from":2,"to":0,"amount":100}],"numNodes":3})";
-        const char* result = solve(input);
-        std::cout << "Test 1 (3-person cycle): " << result << std::endl;
-        // Expected: [] (all debts cancel out)
-    }
-    
-    // Test 2: Chain debt
-    {
-        const char* input = R"({"edges":[{"from":0,"to":1,"amount":50},{"from":1,"to":2,"amount":30}],"numNodes":3})";
-        const char* result = solve(input);
-        std::cout << "Test 2 (chain): " << result << std::endl;
-        // Expected: [{from:0,to:2,amount:30},{from:0,to:1,amount:20}]
-    }
-    
-    // Test 3: Single edge
-    {
-        const char* input = R"({"edges":[{"from":0,"to":1,"amount":75}],"numNodes":2})";
-        const char* result = solve(input);
-        std::cout << "Test 3 (single): " << result << std::endl;
-        // Expected: [{from:0,to:1,amount:75}]
-    }
-    
-    // Test 4: Empty input
-    {
-        const char* input = R"({"edges":[],"numNodes":0})";
-        const char* result = solve(input);
-        std::cout << "Test 4 (empty): " << result << std::endl;
-        // Expected: []
-    }
-    
-    // Test 5: Complex 5-person graph
-    {
-        const char* input = R"({"edges":[
-            {"from":0,"to":1,"amount":100},
-            {"from":1,"to":2,"amount":50},
-            {"from":2,"to":3,"amount":75},
-            {"from":3,"to":4,"amount":25},
-            {"from":4,"to":0,"amount":60},
-            {"from":0,"to":3,"amount":40}
-        ],"numNodes":5})";
-        const char* result = solve(input);
-        std::cout << "Test 5 (5-person complex): " << result << std::endl;
-    }
-    
+    const char* input = R"({"edges":[{"from":0,"to":2,"amount":2},{"from":0,"to":3,"amount":5},{"from":1,"to":4,"amount":6}],"numNodes":5})";
+    std::cout << solve(input) << std::endl;
     free_result();
     return 0;
 }
