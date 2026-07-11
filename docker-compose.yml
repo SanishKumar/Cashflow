@@ -30,6 +30,7 @@ services:
       PORT: "4000"
       NODE_ENV: production
       CORS_ORIGIN: http://localhost:3000
+      OCR_SPACE_API_KEY: ${OCR_SPACE_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy

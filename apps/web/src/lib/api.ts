@@ -53,16 +53,17 @@ export function clearAuth() {
   localStorage.removeItem("currentUserId"); // legacy cleanup
 }
 
-// Track whether a refresh is in-flight to prevent concurrent refreshes
-let refreshPromise: Promise<boolean> | null = null;
+// Track whether a refresh is in-flight to prevent concurrent refreshes.
+// The returned profile also avoids a follow-up /auth/me request on page load.
+let refreshPromise: Promise<User | null> | null = null;
 
 /**
  * Attempt to refresh the access token using the stored refresh token.
- * Returns true if successful, false otherwise.
+ * Returns the safe user profile if successful, null otherwise.
  */
-async function tryRefresh(): Promise<boolean> {
+async function tryRefresh(): Promise<User | null> {
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
+  if (!refreshToken) return null;
 
   try {
     const response = await fetch(`${BASE_URL}/auth/refresh`, {
@@ -73,21 +74,21 @@ async function tryRefresh(): Promise<boolean> {
 
     if (!response.ok) {
       clearAuth();
-      return false;
+      return null;
     }
 
     const data = await response.json();
-    if (data.success && data.data) {
+    if (data.success && data.data?.user) {
       setAccessToken(data.data.accessToken);
       setRefreshToken(data.data.refreshToken);
-      return true;
+      return data.data.user as User;
     }
 
     clearAuth();
-    return false;
+    return null;
   } catch {
     clearAuth();
-    return false;
+    return null;
   }
 }
 
@@ -121,8 +122,8 @@ async function request<T>(
       });
     }
 
-    const refreshed = await refreshPromise;
-    if (refreshed) {
+    const refreshedUser = await refreshPromise;
+    if (refreshedUser) {
       // Retry the original request with the new token (no more retries)
       return request<T>(url, options, false);
     }
@@ -232,11 +233,11 @@ export const authApi = {
   },
 
   restoreSession: async () => {
-    const refreshed = await tryRefresh();
-    if (!refreshed) {
+    const user = await tryRefresh();
+    if (!user) {
       throw new Error("Session expired. Please log in again.");
     }
-    return request<User>("/auth/me", {}, false);
+    return user;
   },
 
   me: () => request<User>("/auth/me"),

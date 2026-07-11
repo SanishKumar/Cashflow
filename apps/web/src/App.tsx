@@ -1,14 +1,28 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { Layout } from "./components/Layout";
 import { DashboardPage } from "./pages/DashboardPage";
-import { GroupsPage } from "./pages/GroupsPage";
-import { GroupDetailPage } from "./pages/GroupDetailPage";
-import { LedgerPage } from "./pages/LedgerPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { ProfilePage } from "./pages/ProfilePage";
-import { LoginPage } from "./pages/LoginPage";
-
 import { UserProvider, useUser } from "./contexts/UserContext";
+
+// Keep the dashboard in the first bundle for the fastest authenticated landing
+// page. Less frequently visited routes load only when a user navigates to them.
+const GroupsPage = lazy(() => import("./pages/GroupsPage").then(({ GroupsPage }) => ({ default: GroupsPage })));
+const GroupDetailPage = lazy(() => import("./pages/GroupDetailPage").then(({ GroupDetailPage }) => ({ default: GroupDetailPage })));
+const LedgerPage = lazy(() => import("./pages/LedgerPage").then(({ LedgerPage }) => ({ default: LedgerPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then(({ SettingsPage }) => ({ default: SettingsPage })));
+const ProfilePage = lazy(() => import("./pages/ProfilePage").then(({ ProfilePage }) => ({ default: ProfilePage })));
+const LoginPage = lazy(() => import("./pages/LoginPage").then(({ LoginPage }) => ({ default: LoginPage })));
+
+function RouteLoading() {
+  return (
+    <div className="h-[100dvh] w-full bg-background flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3 animate-fade-in">
+        <div className="w-10 h-10 rounded-xl bg-surface-variant animate-pulse" />
+        <p className="text-[13px] text-on-surface-variant font-medium">Loading page...</p>
+      </div>
+    </div>
+  );
+}
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { currentUserId, loading } = useUser();
@@ -37,23 +51,25 @@ export default function App() {
   return (
     <BrowserRouter>
       <UserProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            element={
-              <AuthGuard>
-                <Layout />
-              </AuthGuard>
-            }
-          >
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/groups" element={<GroupsPage />} />
-            <Route path="/groups/:id" element={<GroupDetailPage />} />
-            <Route path="/ledger" element={<LedgerPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
-          </Route>
-        </Routes>
+        <Suspense fallback={<RouteLoading />}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              element={
+                <AuthGuard>
+                  <Layout />
+                </AuthGuard>
+              }
+            >
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/groups" element={<GroupsPage />} />
+              <Route path="/groups/:id" element={<GroupDetailPage />} />
+              <Route path="/ledger" element={<LedgerPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
+            </Route>
+          </Routes>
+        </Suspense>
       </UserProvider>
     </BrowserRouter>
   );

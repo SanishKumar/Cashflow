@@ -47,6 +47,11 @@ export interface AuthTokens {
   expiresIn: number; // seconds until access token expires
 }
 
+export interface RefreshResult {
+  user: AuthUser;
+  tokens: AuthTokens;
+}
+
 export interface JwtPayload {
   sub: string; // userId
   email: string;
@@ -179,14 +184,20 @@ export class AuthService {
   async refresh(
     refreshToken: string,
     meta?: { userAgent?: string; ipAddress?: string }
-  ): Promise<AuthTokens> {
+  ): Promise<RefreshResult> {
     const tokenHash = hashRefreshToken(refreshToken);
 
     const session = await prisma.session.findUnique({
       where: { refreshToken: tokenHash },
       include: {
         user: {
-          select: { id: true, email: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+            createdAt: true,
+          },
         },
       },
     });
@@ -204,8 +215,10 @@ export class AuthService {
     // Delete old session
     await prisma.session.delete({ where: { id: session.id } });
 
-    // Issue new tokens with a fresh session
-    return this.createSession(session.user.id, session.user.email, meta);
+    // Issue new tokens with a fresh session. Returning the same safe user
+    // profile as login/register lets clients restore a session in one request.
+    const tokens = await this.createSession(session.user.id, session.user.email, meta);
+    return { user: session.user, tokens };
   }
 
   /**

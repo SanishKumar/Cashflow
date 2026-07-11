@@ -6,6 +6,7 @@
  */
 
 import { Router } from "express";
+import { Prisma } from "@prisma/client";
 import prisma from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -35,6 +36,7 @@ router.get(
       pendingSettlementsCount,
       recentActivity,
       monthlyVolume,
+      netPosition,
     ] = await Promise.all([
       // Total groups
       Promise.resolve(groupIds.length),
@@ -71,10 +73,10 @@ router.get(
 
       // Monthly volume: last 6 months of transaction data
       getMonthlyVolume(groupIds),
-    ]);
 
-    // Calculate net position across all groups
-    const netPosition = await calculateNetPosition(userId, groupIds);
+      // Net position can be calculated independently of the other stats.
+      calculateNetPosition(userId, groupIds),
+    ]);
 
     res.json({
       success: true,
@@ -98,27 +100,29 @@ router.get(
 async function calculateNetPosition(userId: string, groupIds: string[]): Promise<number> {
   if (groupIds.length === 0) return 0;
 
-  // Total amount paid by this user
-  const paidResult = await prisma.transaction.aggregate({
-    where: {
-      groupId: { in: groupIds },
-      paidById: userId,
-      status: { not: "REJECTED" },
-    },
-    _sum: { amount: true },
-  });
-
-  // Total debt shares assigned to this user
-  const owedResult = await prisma.debtShare.aggregate({
-    where: {
-      transaction: {
+  const [paidResult, owedResult] = await Promise.all([
+    // Total amount paid by this user
+    prisma.transaction.aggregate({
+      where: {
         groupId: { in: groupIds },
+        paidById: userId,
         status: { not: "REJECTED" },
       },
-      owedById: userId,
-    },
-    _sum: { amount: true },
-  });
+      _sum: { amount: true },
+    }),
+
+    // Total debt shares assigned to this user
+    prisma.debtShare.aggregate({
+      where: {
+        transaction: {
+          groupId: { in: groupIds },
+          status: { not: "REJECTED" },
+        },
+        owedById: userId,
+      },
+      _sum: { amount: true },
+    }),
+  ]);
 
   const totalPaid = paidResult._sum.amount ?? 0;
   const totalOwed = owedResult._sum.amount ?? 0;
@@ -142,20 +146,25 @@ async function getMonthlyVolume(
   sixMonthsAgo.setDate(1);
   sixMonthsAgo.setHours(0, 0, 0, 0);
 
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      groupId: { in: groupIds },
-      createdAt: { gte: sixMonthsAgo },
-      status: { not: "REJECTED" },
-    },
-    select: { amount: true, createdAt: true },
-  });
+  // Let PostgreSQL aggregate the historical rows. This keeps the response
+  // payload and Node.js work constant even as the ledger grows.
+  const rows = await prisma.$queryRaw<{ month: string; volume: number }[]>(
+    Prisma.sql`
+      SELECT
+        to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS "month",
+        COALESCE(SUM("amount"), 0) AS "volume"
+      FROM "transactions"
+      WHERE "groupId" IN (${Prisma.join(groupIds)})
+        AND "createdAt" >= ${sixMonthsAgo}
+        AND "status" != ${"REJECTED"}::"TransactionStatus"
+      GROUP BY date_trunc('month', "createdAt")
+      ORDER BY date_trunc('month', "createdAt")
+    `
+  );
 
-  // Aggregate by month
   const monthMap = new Map<string, number>();
-  for (const tx of transactions) {
-    const key = `${tx.createdAt.getFullYear()}-${String(tx.createdAt.getMonth() + 1).padStart(2, "0")}`;
-    monthMap.set(key, (monthMap.get(key) ?? 0) + tx.amount);
+  for (const row of rows) {
+    monthMap.set(row.month, Number(row.volume));
   }
 
   // Fill in all 6 months (even if no transactions)

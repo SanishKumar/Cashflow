@@ -3,7 +3,7 @@
 // Ledger + Graph + Balances + Actions
 // ──────────────────────────────────────────────
 
-import { useState, useCallback } from "react";
+import { lazy, Suspense, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSocket } from "../hooks/useSocket";
@@ -12,10 +12,13 @@ import type { Group, Transaction, GroupBalances, Settlement } from "../types/ind
 import { ExpenseModal } from "../components/ExpenseModal";
 import { SettleUpModal } from "../components/SettleUpModal";
 import { DeleteGroupModal } from "../components/DeleteGroupModal";
-import { DebtGraph } from "../components/DebtGraph";
 import { RoleManager } from "../components/RoleManager";
 import { AuditLogViewer } from "../components/AuditLogViewer";
 import { useUser } from "../contexts/UserContext";
+
+const DebtGraph = lazy(() =>
+  import("../components/DebtGraph").then(({ DebtGraph }) => ({ default: DebtGraph }))
+);
 
 type ViewMode = "ledger" | "graph" | "settings";
 
@@ -168,7 +171,18 @@ export function GroupDetailPage() {
             onUpdateStatus={handleUpdateStatus}
           />
         ) : viewMode === "graph" ? (
-          <DebtGraph settlements={currentSettlements} members={group.members} currency={group.currency} />
+          <Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3 animate-pulse">
+                  <div className="w-12 h-12 rounded-xl bg-surface-variant" />
+                  <div className="h-3 w-28 rounded bg-surface-variant" />
+                </div>
+              </div>
+            }
+          >
+            <DebtGraph settlements={currentSettlements} members={group.members} currency={group.currency} />
+          </Suspense>
         ) : (
           <div className="flex-1 overflow-y-auto p-4 md:p-6 max-w-3xl mx-auto w-full space-y-8 animate-fade-in">
             <section>

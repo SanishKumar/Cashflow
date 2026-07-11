@@ -23,45 +23,22 @@ export interface ReceiptData {
   rawText: string;
 }
 
-const RECEIPT_PROMPT = `Extract this receipt into the requested JSON shape. Use ISO-8601 YYYY-MM-DD for date when visible, otherwise an empty string. Do not invent values: use 0 for an unavailable total and null for unavailable subtotal, tax, or tip. Identify the final amount charged as total. Infer one lower-case category from groceries, dining, transport, utilities, shopping, entertainment, travel, health, or other. Return individual purchased items only when they are readable.`;
-const TESSERACT_CACHE_PATH = join(tmpdir(), "cashflow-tesseract-cache");
-
-const receiptSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["vendor", "date", "total", "subtotal", "tax", "tip", "currency", "category", "items", "confidence", "rawText"],
-  properties: {
-    vendor: { type: "string" },
-    date: { type: "string" },
-    total: { type: "number" },
-    subtotal: { type: ["number", "null"] },
-    tax: { type: ["number", "null"] },
-    tip: { type: ["number", "null"] },
-    currency: { type: "string" },
-    category: { type: "string" },
-    items: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["name", "quantity", "price"],
-        properties: {
-          name: { type: "string" },
-          quantity: { type: "number" },
-          price: { type: "number" },
-        },
-      },
-    },
-    confidence: { type: "number" },
-    rawText: { type: "string" },
-  },
-};
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+interface OcrSpaceParsedResult {
+  ParsedText?: string | null;
+  ErrorMessage?: string | string[] | null;
+  ErrorDetails?: string | null;
 }
+
+interface OcrSpaceResponse {
+  IsErroredOnProcessing?: boolean;
+  ErrorMessage?: string | string[] | null;
+  ErrorDetails?: string | null;
+  ParsedResults?: OcrSpaceParsedResult[];
+}
+
+const TESSERACT_CACHE_PATH = join(tmpdir(), "cashflow-tesseract-cache");
+const OCR_SPACE_ENDPOINT = "https://api.ocr.space/parse/image";
+const OCR_SPACE_FREE_FILE_LIMIT_BYTES = 1 * 1024 * 1024;
 
 function toNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -72,14 +49,10 @@ function toNumber(value: unknown): number | undefined {
   return undefined;
 }
 
-function toOptionalNumber(value: unknown): number | undefined {
-  return value === null || value === undefined ? undefined : toNumber(value);
-}
-
 function detectCurrency(text: string): string {
-  if (/₹|\bINR\b/i.test(text)) return "INR";
-  if (/€|\bEUR\b/i.test(text)) return "EUR";
-  if (/£|\bGBP\b/i.test(text)) return "GBP";
+  if (/\u20B9|\bINR\b/i.test(text)) return "INR";
+  if (/\u20AC|\bEUR\b/i.test(text)) return "EUR";
+  if (/\u00A3|\bGBP\b/i.test(text)) return "GBP";
   if (/\bCAD\b/i.test(text)) return "CAD";
   if (/\bAUD\b/i.test(text)) return "AUD";
   return "USD";
@@ -108,7 +81,7 @@ function dateFromText(text: string): string {
 }
 
 function monetaryValues(text: string): number[] {
-  return [...text.matchAll(/(?:[$₹€£]|\b(?:USD|INR|EUR|GBP)\s*)?\s*(\d{1,3}(?:,\d{3})*\.\d{2})\b/gi)]
+  return [...text.matchAll(/(?:[$\u20B9\u20AC\u00A3]|\b(?:USD|INR|EUR|GBP)\s*)?\s*(\d{1,3}(?:,\d{3})*\.\d{2})\b/gi)]
     .map((match) => Number(match[1].replace(/,/g, "")))
     .filter((amount) => Number.isFinite(amount) && amount >= 0);
 }
@@ -122,7 +95,7 @@ function amountForLabel(text: string, label: RegExp): number | undefined {
 function itemLines(text: string): ReceiptItem[] {
   const ignored = /subtotal|total|tax|tip|change|cash|card|visa|mastercard|balance|amount due/i;
   return text.split(/\r?\n/).flatMap((line) => {
-    const match = line.trim().match(/^(.+?)\s+(?:(\d+)\s*[x×]\s*)?([$₹€£]?\s*\d{1,3}(?:,\d{3})*\.\d{2})$/i);
+    const match = line.trim().match(/^(.+?)\s+(?:(\d+)\s*[x\u00D7]\s*)?([$\u20B9\u20AC\u00A3]?\s*\d{1,3}(?:,\d{3})*\.\d{2})$/i);
     if (!match || ignored.test(match[1])) return [];
     const price = toNumber(match[3]);
     if (price === undefined || !match[1].trim()) return [];
@@ -157,82 +130,68 @@ function fallbackParse(rawText: string): ReceiptData {
   };
 }
 
-function normaliseVisionReceipt(value: unknown): ReceiptData {
-  const parsed = asRecord(value);
-  const itemValues = Array.isArray(parsed.items) ? parsed.items : [];
-  const items = itemValues.flatMap((item) => {
-    const record = asRecord(item);
-    const price = toNumber(record.price);
-    if (!price && price !== 0) return [];
-    return [{
-      name: typeof record.name === "string" && record.name.trim() ? record.name.trim() : "Receipt item",
-      quantity: Math.max(1, toNumber(record.quantity) ?? 1),
-      price,
-    }];
-  });
-  const rawText = typeof parsed.rawText === "string" ? parsed.rawText : "";
-  const total = Math.max(0, toNumber(parsed.total) ?? 0);
-  const confidence = Math.min(1, Math.max(0, toNumber(parsed.confidence) ?? (total > 0 ? 0.8 : 0.35)));
-
-  return {
-    vendor: typeof parsed.vendor === "string" && parsed.vendor.trim() ? parsed.vendor.trim() : "Scanned receipt",
-    date: typeof parsed.date === "string" ? parsed.date : "",
-    total,
-    subtotal: toOptionalNumber(parsed.subtotal),
-    tax: toOptionalNumber(parsed.tax),
-    tip: toOptionalNumber(parsed.tip),
-    currency: typeof parsed.currency === "string" && /^[A-Za-z]{3}$/.test(parsed.currency) ? parsed.currency.toUpperCase() : detectCurrency(rawText),
-    category: typeof parsed.category === "string" && parsed.category.trim() ? parsed.category.toLowerCase() : categoryFromText(rawText),
-    items,
-    confidence,
-    rawText,
-  };
+function fileExtensionFor(mimetype: string): string {
+  switch (mimetype) {
+    case "image/png": return "png";
+    case "image/webp": return "webp";
+    case "image/heic": return "heic";
+    default: return "jpg";
+  }
 }
 
-async function extractWithVision(image: Buffer, mimetype: string): Promise<ReceiptData> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
+function errorText(value: unknown): string {
+  if (Array.isArray(value)) return value.map(errorText).filter(Boolean).join("; ");
+  return typeof value === "string" ? value.trim() : "";
+}
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
+function ocrSpaceErrorMessage(payload: OcrSpaceResponse): string {
+  const errors = [
+    errorText(payload.ErrorMessage),
+    errorText(payload.ErrorDetails),
+    ...(payload.ParsedResults ?? []).flatMap((result) => [
+      errorText(result.ErrorMessage),
+      errorText(result.ErrorDetails),
+    ]),
+  ].filter(Boolean);
+  return errors.join("; ");
+}
+
+async function extractWithOcrSpace(image: Buffer, mimetype: string): Promise<ReceiptData> {
+  const apiKey = process.env.OCR_SPACE_API_KEY;
+  if (!apiKey) throw new Error("OCR_SPACE_API_KEY is not configured");
+  if (image.byteLength > OCR_SPACE_FREE_FILE_LIMIT_BYTES) {
+    throw new Error("OCR.space free plan accepts images up to 1 MB; using local OCR fallback");
+  }
+
+  const formData = new FormData();
+  formData.set("file", new Blob([new Uint8Array(image)], { type: mimetype }), `receipt.${fileExtensionFor(mimetype)}`);
+  formData.set("OCREngine", "3");
+  formData.set("language", "auto");
+  formData.set("isOverlayRequired", "false");
+  formData.set("detectOrientation", "true");
+  formData.set("scale", "true");
+  formData.set("isTable", "true");
+
+  const response = await fetch(OCR_SPACE_ENDPOINT, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_RECEIPT_MODEL || "gpt-5-mini",
-      store: false,
-      input: [{
-        role: "user",
-        content: [
-          { type: "input_text", text: RECEIPT_PROMPT },
-          { type: "input_image", image_url: `data:${mimetype};base64,${image.toString("base64")}`, detail: "high" },
-        ],
-      }],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "receipt_data",
-          strict: true,
-          schema: receiptSchema,
-        },
-      },
-    }),
+    headers: { apikey: apiKey },
+    body: formData,
   });
 
-  if (!response.ok) throw new Error(`Vision request failed with status ${response.status}`);
-  const payload = asRecord(await response.json());
-  const outputText = typeof payload.output_text === "string"
-    ? payload.output_text
-    : Array.isArray(payload.output)
-      ? payload.output.flatMap((output) => {
-        const content = asRecord(output).content;
-        return Array.isArray(content) ? content.map((entry) => asRecord(entry).text).filter((text): text is string => typeof text === "string") : [];
-      }).join("\n")
-      : "";
+  if (!response.ok) throw new Error(`OCR.space request failed with status ${response.status}`);
 
-  if (!outputText) throw new Error("Vision response did not contain receipt data");
-  return normaliseVisionReceipt(JSON.parse(outputText));
+  const payload = await response.json() as OcrSpaceResponse;
+  const rawText = (payload.ParsedResults ?? [])
+    .map((result) => result.ParsedText?.trim() ?? "")
+    .filter(Boolean)
+    .join("\n");
+  const providerError = ocrSpaceErrorMessage(payload);
+
+  if (payload.IsErroredOnProcessing || !rawText) {
+    throw new Error(providerError || "OCR.space did not return readable receipt text");
+  }
+
+  return fallbackParse(rawText);
 }
 
 async function extractWithLocalOcr(image: Buffer): Promise<ReceiptData> {
@@ -247,14 +206,14 @@ async function extractWithLocalOcr(image: Buffer): Promise<ReceiptData> {
 }
 
 /**
- * Prefer AI Vision for receipt understanding, retaining server-side local OCR
- * as a privacy-preserving fallback when the vision provider is unavailable.
+ * OCR.space Engine 3 is the primary receipt reader. Local Tesseract remains
+ * available when the provider, its free quota, or a large upload is unavailable.
  */
 export async function scanReceipt(image: Buffer, mimetype: string): Promise<ReceiptData> {
   try {
-    return await extractWithVision(image, mimetype);
-  } catch (visionError) {
-    console.warn("[RECEIPT] Vision scan failed; using local OCR fallback:", visionError instanceof Error ? visionError.message : "unknown error");
+    return await extractWithOcrSpace(image, mimetype);
+  } catch (providerError) {
+    console.warn("[RECEIPT] OCR.space scan failed; using local OCR fallback:", providerError instanceof Error ? providerError.message : "unknown error");
     try {
       return await extractWithLocalOcr(image);
     } catch (ocrError) {

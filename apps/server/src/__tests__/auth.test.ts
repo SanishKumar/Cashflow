@@ -145,6 +145,34 @@ describe("AuthService", () => {
     });
   });
 
+  describe("refresh", () => {
+    it("rotates tokens and returns the safe user profile", async () => {
+      mockPrisma.session.findUnique.mockResolvedValue({
+        id: "session-1",
+        expiresAt: new Date(Date.now() + 86400000),
+        user: {
+          id: "user-1",
+          name: "Test User",
+          email: "test@example.com",
+          avatarUrl: null,
+          createdAt: new Date(),
+        },
+      });
+      mockPrisma.session.delete.mockResolvedValue({});
+
+      const result = await authService.refresh("valid-refresh-token");
+
+      expect(result.user).toMatchObject({
+        id: "user-1",
+        name: "Test User",
+        email: "test@example.com",
+      });
+      expect(result.tokens.accessToken).toBeDefined();
+      expect(result.tokens.refreshToken).toBeDefined();
+      expect(mockPrisma.session.delete).toHaveBeenCalledWith({ where: { id: "session-1" } });
+    });
+  });
+
   describe("logout", () => {
     it("deletes the session for a valid refresh token", async () => {
       mockPrisma.session.findUnique.mockResolvedValue({

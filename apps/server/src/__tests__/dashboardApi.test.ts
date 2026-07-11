@@ -16,6 +16,7 @@ const { mockPrisma } = vi.hoisted(() => ({
     user: { findUnique: vi.fn() },
     groupMember: { findMany: vi.fn() },
     debtShare: { aggregate: vi.fn() },
+    $queryRaw: vi.fn(),
   } as any,
 }));
 
@@ -56,10 +57,15 @@ describe("Dashboard API", () => {
       
       mockPrisma.settlement.count.mockResolvedValue(3);
       
-      // Monthly volume aggregation mock
+      // Total volume and net paid aggregation mocks
       mockPrisma.transaction.aggregate.mockResolvedValue({
         _sum: { amount: 1200 },
       });
+
+      // Monthly volume is aggregated in PostgreSQL.
+      mockPrisma.$queryRaw.mockResolvedValue([
+        { month: "2026-07", volume: 1200 },
+      ]);
       
       mockPrisma.debtShare.aggregate.mockResolvedValue({
         _sum: { amount: 500 },

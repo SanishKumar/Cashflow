@@ -14,14 +14,14 @@
 - **Data Export Pipeline**: One-click generation of PDF summary reports and CSV ledgers via `pdfkit` and `csv-stringify`.
 - **Glassmorphic UI**: Premium, modern interface built with Tailwind CSS v4, featuring micro-animations and responsive layouts.
 - **Interactive Graphs**: Visualizes the flow of debts using React Flow with real-time WebSockets synchronization.
-- **WASM OCR Receipt Scanning**: Drag-and-drop receipt scanning powered by client-side Tesseract.js.
+- **Receipt Scanning**: Server-side OCR.space Engine 3 scanning, with a local Tesseract fallback when the provider is unavailable.
 - **Multi-Currency Support**: Real-time dynamic exchange rate conversion via Frankfurter API.
 
 ## Screenshots
 | | |
 |:---:|:---:|
 | <img src="docs/screenshots/dashboard.png" alt="Dashboard View" /> <br/> **Dashboard View** | <img src="docs/screenshots/graph.png" alt="Interactive Debt Graph" /> <br/> **Interactive Debt Graph** |
-| <img src="docs/screenshots/ocr-modal.png" alt="WASM OCR Receipt Scanning" /> <br/> **WASM OCR Receipt Scanning** | <img src="docs/screenshots/ledger.png" alt="Global Ledger" /> <br/> **Global Ledger** |
+| <img src="docs/screenshots/ocr-modal.png" alt="Receipt Scanning" /> <br/> **Receipt Scanning** | <img src="docs/screenshots/ledger.png" alt="Global Ledger" /> <br/> **Global Ledger** |
 
 ## Architecture
 
@@ -106,7 +106,7 @@ graph TD
 
 1. **Neon PostgreSQL**: Create a project → copy the connection string. Add `&connect_timeout=30&pool_timeout=30` to prevent serverless cold-start errors.
 2. **Upstash Redis**: Create a database → copy the `rediss://` connection URL (TLS)
-3. Copy `.env.example` → `apps/server/.env` and fill in your credentials. Receipt scanning also needs `OPENAI_API_KEY`; set `PREMIUM_RECEIPT_USER_IDS` to a comma-separated list of user IDs that should bypass the free 20 scans/hour limit.
+3. Copy `.env.example` → `apps/server/.env` and fill in your credentials. Receipt scanning uses `OCR_SPACE_API_KEY`; set `PREMIUM_RECEIPT_USER_IDS` to a comma-separated list of user IDs that should bypass the free 20 scans/hour limit.
 
 ### Local Development
 
@@ -114,7 +114,7 @@ graph TD
 # 1. Clone and install
 npm install
 
-# 2. Set up environment (fill in Neon + Upstash credentials, plus OPENAI_API_KEY for receipt scanning)
+# 2. Set up environment (fill in Neon + Upstash credentials, plus OCR_SPACE_API_KEY for receipt scanning)
 cp .env.example apps/server/.env
 
 # 3. Push database schema to Neon

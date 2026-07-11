@@ -121,7 +121,7 @@ router.post(
   validate(RefreshSchema),
   async (req, res, next) => {
     try {
-      const tokens = await authService.refresh(req.body.refreshToken, {
+      const result = await authService.refresh(req.body.refreshToken, {
         userAgent: req.headers["user-agent"],
         ipAddress: req.ip,
       });
@@ -129,9 +129,10 @@ router.post(
       res.json({
         success: true,
         data: {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiresIn: tokens.expiresIn,
+          user: result.user,
+          accessToken: result.tokens.accessToken,
+          refreshToken: result.tokens.refreshToken,
+          expiresIn: result.tokens.expiresIn,
         },
       });
     } catch (err) {
