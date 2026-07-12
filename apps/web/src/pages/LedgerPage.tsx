@@ -2,7 +2,7 @@
 // Global Ledger Page — Transactions + Audit Log
 // ──────────────────────────────────────────────
 
-import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { groupApi, transactionApi, auditLogApi } from "../lib/api";
 import type { Group, Transaction, AuditLogEntry } from "../types/index";
@@ -17,11 +17,6 @@ function formatCurrency(amount: number, currencyCode: string = "USD"): string {
   } catch (e) {
     return `$${Math.abs(amount).toFixed(2)}`;
   }
-}
-
-function getTxHash(id: string): string {
-  const clean = id.replace(/[^a-f0-9]/gi, "0").toLowerCase();
-  return `0x${clean.slice(0, 8)}`;
 }
 
 const ACTION_ICONS: Record<string, { icon: string; color: string }> = {
@@ -45,8 +40,16 @@ interface GroupWithTransactions {
 type Tab = "transactions" | "audit";
 
 export function LedgerPage() {
-  const [tab, setTab] = useState<Tab>("transactions");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: Tab = searchParams.get("tab") === "activity" ? "audit" : "transactions";
   const { data: groups, loading } = useApi<Group[]>(() => groupApi.list());
+
+  const selectTab = (nextTab: Tab) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextTab === "audit") nextParams.set("tab", "activity");
+    else nextParams.delete("tab");
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const groupIds = groups?.map((g) => g.id) ?? [];
   const { data: allGroupsTx, loading: txLoading } = useApi<GroupWithTransactions[]>(
@@ -80,12 +83,13 @@ export function LedgerPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <header className="border-b border-outline-variant/30 flex items-center px-4 py-3 md:h-14 md:px-6 md:py-0 justify-end md:justify-between bg-surface-container/50 shrink-0">
-        <div className="hidden md:flex items-center gap-3">
-          <span className="material-symbols-outlined text-on-surface-variant text-[20px]">history_edu</span>
-          <h2 className="text-[15px] font-semibold text-on-surface">Immutable Audit Log</h2>
+      <header className="flex shrink-0 flex-col gap-3 px-4 pb-2 pt-3 md:gap-4 md:px-8 md:pb-4 md:pt-7">
+        <div>
+          <p className="mb-1 hidden text-[10px] font-bold uppercase tracking-[0.14em] text-primary md:block">Your records</p>
+          <h2 className="text-[22px] font-bold tracking-tight text-on-surface md:text-[24px]">Ledger & activity</h2>
+          <p className="mt-0.5 max-w-xl text-[11px] leading-relaxed text-on-surface-variant md:mt-1 md:text-[12px]">Every expense, status change, and group update in one timeline.</p>
           {allTransactions.length > 0 && (
-            <span className="text-[11px] text-on-surface-variant bg-surface-variant px-2 py-0.5 rounded-full font-medium">
+            <span className="mt-1.5 inline-flex rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary md:mt-2">
               {allTransactions.length} records
             </span>
           )}
@@ -93,7 +97,7 @@ export function LedgerPage() {
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5 w-full md:w-auto">
             <button
-              onClick={() => setTab("transactions")}
+              onClick={() => selectTab("transactions")}
               className={`h-8 md:h-7 flex-1 md:flex-none px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
                 tab === "transactions"
                   ? "bg-surface-container-high text-on-surface shadow-sm"
@@ -103,7 +107,7 @@ export function LedgerPage() {
               Transactions
             </button>
             <button
-              onClick={() => setTab("audit")}
+              onClick={() => selectTab("audit")}
               className={`h-8 md:h-7 flex-1 md:flex-none px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
                 tab === "audit"
                   ? "bg-surface-container-high text-on-surface shadow-sm"
@@ -113,31 +117,27 @@ export function LedgerPage() {
               Activity
             </button>
           </div>
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-surface-variant/40 rounded border border-outline-variant/30 text-[11px] text-on-surface-variant font-mono">
-            <span className="material-symbols-outlined text-[14px] text-primary">verified_user</span>
-            VERIFIED
-          </div>
         </div>
       </header>
 
       {/* Summary Cards */}
-      <div className="px-4 md:px-6 pt-4 md:pt-5 pb-3 grid grid-cols-3 gap-3 md:flex md:gap-4 shrink-0">
-        <div className="glass-panel-sm p-3 md:p-4 flex-1">
-          <span className="text-label text-[10px]">Total Volume</span>
-          <div className="text-data-lg text-secondary mt-1">{formatCurrency(totalVolume)}</div>
+      <div className="grid shrink-0 grid-cols-3 gap-2 px-4 pb-3 md:gap-4 md:px-8 md:pb-5">
+        <div className="min-w-0 rounded-2xl border border-outline-variant/70 bg-surface-container p-3 shadow-[0_8px_20px_rgba(31,35,54,0.04)] md:p-3.5">
+          <span className="text-[10px] font-semibold text-on-surface-variant"><span className="md:hidden">Tracked</span><span className="hidden md:inline">Tracked spending</span></span>
+          <div className="mt-1 whitespace-nowrap text-[clamp(0.94rem,4.4vw,1.25rem)] font-bold leading-none tracking-tight tabular-nums text-secondary">{formatCurrency(totalVolume)}</div>
         </div>
-        <div className="glass-panel-sm p-3 md:p-4 flex-1">
-          <span className="text-label text-[10px]">Transactions</span>
-          <div className="text-data-lg text-on-surface mt-1">{allTransactions.length}</div>
+        <div className="min-w-0 rounded-2xl border border-outline-variant/70 bg-surface-container p-3 shadow-[0_8px_20px_rgba(31,35,54,0.04)] md:p-3.5">
+          <span className="text-[10px] font-semibold text-on-surface-variant">Expenses</span>
+          <div className="mt-1 text-[20px] font-bold leading-none tracking-tight text-on-surface">{allTransactions.length}</div>
         </div>
-        <div className="glass-panel-sm p-3 md:p-4 flex-1">
-          <span className="text-label text-[10px]">Groups</span>
-          <div className="text-data-lg text-on-surface mt-1">{groups?.length ?? 0}</div>
+        <div className="min-w-0 rounded-2xl border border-outline-variant/70 bg-surface-container p-3 shadow-[0_8px_20px_rgba(31,35,54,0.04)] md:p-3.5">
+          <span className="text-[10px] font-semibold text-on-surface-variant">Groups</span>
+          <div className="mt-1 text-[20px] font-bold leading-none tracking-tight text-on-surface">{groups?.length ?? 0}</div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="mobile-scroll-safe flex-1 overflow-auto px-4 md:px-6 pb-6">
+      <div className="mobile-scroll-safe flex-1 overflow-auto px-4 pb-6 md:px-8 md:pb-8">
         {tab === "transactions" ? (
           <TransactionsView transactions={allTransactions} loading={isLoading} />
         ) : (
@@ -180,9 +180,8 @@ function TransactionsView({ transactions, loading }: { transactions: (Transactio
     <div className="hidden md:block rounded-lg border border-outline-variant/30 overflow-hidden mt-2">
       <div className="grid grid-cols-12 gap-3 px-4 py-2.5 bg-surface-dim border-b border-outline-variant/30">
         <div className="col-span-2 text-label text-[10px]">Date</div>
-        <div className="col-span-2 text-label text-[10px]">Tx Hash</div>
-        <div className="col-span-3 text-label text-[10px]">Description</div>
-        <div className="col-span-1 text-label text-[10px]">Group</div>
+        <div className="col-span-4 text-label text-[10px]">Description</div>
+        <div className="col-span-2 text-label text-[10px]">Group</div>
         <div className="col-span-2 text-label text-[10px]">Initiated By</div>
         <div className="col-span-2 text-label text-[10px] text-right">Amount</div>
       </div>
@@ -195,16 +194,11 @@ function TransactionsView({ transactions, loading }: { transactions: (Transactio
           <div className="col-span-2 text-data text-on-surface-variant text-[12px]">
             {new Date(tx.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
           </div>
-          <div className="col-span-2 flex items-center">
-            <span className="font-mono text-[10px] text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded border border-primary/20">
-              {getTxHash(tx.id)}
-            </span>
-          </div>
-          <div className="col-span-3 text-[13px] font-medium text-on-surface truncate">
+          <div className="col-span-4 text-[13px] font-medium text-on-surface truncate">
             {tx.description}
             {tx.status && <span className={`ml-2 text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wider ${tx.status === 'COMPLETED' ? 'bg-positive/20 text-positive' : tx.status === 'PENDING' ? 'bg-warning/20 text-warning' : 'bg-error/20 text-error'}`}>{tx.status}</span>}
           </div>
-          <div className="col-span-1">
+          <div className="col-span-2">
             <span className="text-[11px] text-primary bg-glow-primary px-2 py-0.5 rounded-full font-medium truncate inline-block max-w-full">
               {tx.groupName}
             </span>
@@ -221,19 +215,19 @@ function TransactionsView({ transactions, loading }: { transactions: (Transactio
         </div>
       ))}
     </div>
-    <div className="md:hidden flex flex-col gap-3 mt-2">
+    <div className="md:hidden mt-1 flex flex-col gap-2">
       {transactions.map((tx, i) => (
-        <div
+        <article
           key={tx.id}
-          className="rounded-lg border border-outline-variant/30 bg-surface-container p-4 flex flex-col gap-3 animate-slide-up"
+          className="min-w-0 rounded-2xl border border-outline-variant/70 bg-surface-container p-3 shadow-[0_6px_16px_rgba(31,35,54,0.035)] animate-slide-up"
           style={{ animationDelay: `${Math.min(i * 20, 200)}ms` }}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[14px] font-semibold text-on-surface leading-snug">
+              <p className="truncate text-[13px] font-bold leading-snug text-on-surface">
                 {tx.description}
               </p>
-              <div className="flex flex-wrap items-center gap-2 mt-2">
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 {tx.status && (
                   <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wider ${tx.status === 'COMPLETED' ? 'bg-positive/20 text-positive' : tx.status === 'PENDING' ? 'bg-warning/20 text-warning' : 'bg-error/20 text-error'}`}>
                     {tx.status}
@@ -244,35 +238,19 @@ function TransactionsView({ transactions, loading }: { transactions: (Transactio
                 </span>
               </div>
             </div>
-            <div className="text-data text-secondary font-semibold shrink-0">
+            <div className="shrink-0 whitespace-nowrap text-[14px] font-bold tabular-nums text-secondary">
               {formatCurrency(tx.amount, tx.groupCurrency || "USD")}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 text-[11px] text-on-surface-variant">
-            <div>
-              <span className="text-label text-[9px] block mb-1">Paid By</span>
-              <div className="flex items-center gap-2 min-w-0">
-                <div className={`avatar avatar-sm avatar-${i % 6} !w-6 !h-6 !text-[9px]`}>
-                  {getInitials(tx.paidBy.name)}
-                </div>
-                <span className="truncate text-on-surface">{tx.paidBy.name}</span>
-              </div>
+          <div className="mt-2 flex min-w-0 items-center justify-between gap-3 border-t border-outline-variant/50 pt-2 text-[10px] text-on-surface-variant">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className={`avatar avatar-sm avatar-${i % 6} !h-5 !w-5 !text-[8px]`}>{getInitials(tx.paidBy.name)}</span>
+              <span className="truncate">{tx.paidBy.name}</span>
             </div>
-            <div>
-              <span className="text-label text-[9px] block mb-1">Date</span>
-              <span className="text-data text-on-surface-variant text-[11px]">
-                {new Date(tx.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-              </span>
-            </div>
+            <time className="shrink-0 font-medium tabular-nums">{new Date(tx.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</time>
           </div>
-
-          <div className="pt-2 border-t border-outline-variant/20">
-            <span className="font-mono text-[10px] text-primary/80 bg-primary/10 px-2 py-1 rounded border border-primary/20">
-              {getTxHash(tx.id)}
-            </span>
-          </div>
-        </div>
+        </article>
       ))}
     </div>
     </>
@@ -338,9 +316,6 @@ function AuditLogView({ logs, loading }: { logs: AuditLogEntry[]; loading: boole
                     {log.group.name}
                   </span>
                 )}
-                <span className="text-[9px] text-on-surface-variant bg-surface-variant px-1.5 py-0.5 rounded font-mono uppercase tracking-wider">
-                  {log.action}
-                </span>
               </div>
             </div>
           </div>

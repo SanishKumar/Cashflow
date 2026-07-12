@@ -3,11 +3,12 @@
 // ──────────────────────────────────────────────
 
 import { useRef } from "react";
-import { NavLink, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { useUser } from "../contexts/UserContext";
+import { useTheme } from "../contexts/ThemeContext";
+import { BrandMark } from "./BrandMark";
 
 interface SidebarProps {
-  syncActive?: boolean;
   onClose?: () => void;
 }
 
@@ -22,21 +23,10 @@ function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
-export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
-  const navigate = useNavigate();
+export function Sidebar({ onClose }: SidebarProps) {
   const { currentUser, logout } = useUser();
-  const [searchParams] = useSearchParams();
+  const { theme, toggleTheme } = useTheme();
   const swipeStartX = useRef<number | null>(null);
-  const searchQuery = searchParams.get("q") || "";
-
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const q = e.target.value;
-    if (q) {
-      navigate(`/groups?q=${encodeURIComponent(q)}`, { replace: true });
-    } else {
-      navigate(`/groups`, { replace: true });
-    }
-  };
 
   const handleSignOut = async () => {
     await logout();
@@ -60,21 +50,19 @@ export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
 
   return (
     <nav
-      className="shrink-0 h-full w-[280px] md:w-[240px] bg-surface-container flex flex-col border-r border-outline-variant/50"
+      className="shrink-0 h-full w-[286px] md:w-[264px] bg-surface-container flex flex-col border-r border-outline-variant/70"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
       {/* Brand */}
-      <div className="px-5 pt-5 pb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-container to-[#4f46e5] flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-[18px]">account_balance</span>
-          </div>
+      <div className="px-6 pt-7 pb-6 flex items-center justify-between">
+        <Link to="/" className="flex items-center gap-3" onClick={onClose}>
+          <BrandMark className="h-10 w-10 shrink-0 drop-shadow-[0_8px_14px_rgba(105,71,244,0.22)]" />
           <div>
-            <h1 className="text-[15px] font-bold text-on-surface tracking-tight">CashFlow</h1>
-            <p className="text-[10px] text-on-surface-variant font-medium tracking-wider">v3.0 • RBAC</p>
+            <h1 className="text-[19px] font-bold text-on-surface tracking-tight">CashFlow</h1>
+            <p className="text-[10px] text-on-surface-variant font-medium">Shared expenses</p>
           </div>
-        </div>
+        </Link>
         {onClose && (
           <button 
             onClick={onClose}
@@ -85,34 +73,19 @@ export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
         )}
       </div>
 
-      {/* Search */}
-      <div className="px-4 pb-3">
-        <div className="relative">
-          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant pointer-events-none">
-            search
-          </span>
-          <input
-            className="input-field !pl-9 !py-2 !text-[12px] !rounded-lg"
-            placeholder="Search groups..."
-            type="text"
-            value={searchQuery}
-            onChange={handleSearch}
-          />
-        </div>
-      </div>
-
       {/* Navigation */}
-      <div className="flex-1 overflow-y-auto px-3 flex flex-col gap-0.5">
-        <p className="text-section-title px-3 pt-2 pb-2">Navigation</p>
+      <div className="flex-1 overflow-y-auto px-4 flex flex-col gap-1.5">
+        <p className="text-[10px] font-bold tracking-[0.14em] text-on-surface-variant/70 px-2 pb-2">WORKSPACE</p>
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.end}
+            onClick={onClose}
             className={({ isActive }) =>
-              `flex items-center gap-3 h-9 px-3 rounded-lg transition-all duration-150 text-[13px] font-medium ${
+              `flex items-center gap-3 h-11 px-3.5 rounded-xl transition-all duration-150 text-[13px] font-semibold ${
                 isActive
-                  ? "bg-glow-primary text-primary shadow-[inset_0_0_0_1px_rgba(139,156,247,0.2)]"
+                  ? "bg-primary/10 text-primary shadow-[inset_3px_0_0_var(--color-primary)]"
                   : "text-on-surface-variant hover:text-on-surface hover:bg-glass-hover"
               }`
             }
@@ -121,22 +94,34 @@ export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
             {item.label}
           </NavLink>
         ))}
+        <div className="mt-6 px-1">
+          <Link
+            to="/groups?create=1"
+            onClick={onClose}
+            className="h-11 rounded-xl bg-primary text-on-primary flex items-center justify-center gap-2 text-[12px] font-bold shadow-lg shadow-primary/20 hover:brightness-105 transition-all"
+          >
+            <span className="material-symbols-outlined text-[18px]">group_add</span>
+            New group
+          </Link>
+        </div>
       </div>
 
       {/* Footer — User Identity */}
-      <div className="px-3 pb-3 flex flex-col gap-0.5">
-        <div className="h-px bg-outline-variant/30 mx-3 mb-2" />
+      <div className="px-4 pb-5 flex flex-col gap-2">
+        <div className="h-px bg-outline-variant/70 mx-1 mb-3" />
 
         {/* Signed-in User Profile */}
         {currentUser && (
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-container-high border border-outline-variant/30">
-            <div className="avatar avatar-sm avatar-0 !w-8 !h-8 !text-[11px] shrink-0">
-              {getInitials(currentUser.name)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-semibold text-on-surface truncate">{currentUser.name}</p>
-              <p className="text-[10px] text-on-surface-variant truncate">{currentUser.email}</p>
-            </div>
+          <div className="flex items-center gap-1 px-2 py-2 rounded-xl hover:bg-glass-hover transition-colors">
+            <Link to="/profile" onClick={onClose} className="flex flex-1 min-w-0 items-center gap-3">
+              <div className="avatar avatar-sm avatar-0 !w-8 !h-8 !text-[11px] shrink-0">
+                {getInitials(currentUser.name)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-on-surface truncate">{currentUser.name}</p>
+                <p className="text-[10px] text-on-surface-variant truncate">{currentUser.email}</p>
+              </div>
+            </Link>
             <button
               onClick={handleSignOut}
               className="shrink-0 p-1 rounded-md text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
@@ -147,22 +132,18 @@ export function Sidebar({ syncActive = false, onClose }: SidebarProps) {
           </div>
         )}
 
-        {/* Sync Status */}
-        <div className="flex items-center gap-2 px-3 py-2 mt-1 rounded-lg bg-surface-dim">
-          <span className="relative flex h-2 w-2">
-            {syncActive && (
-              <span className="animate-sync-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />
-            )}
-            <span
-              className={`relative inline-flex h-2 w-2 rounded-full ${
-                syncActive ? "bg-secondary" : "bg-outline"
-              }`}
-            />
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="flex items-center justify-between px-2 py-2.5 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-glass-hover transition-colors"
+          title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+        >
+          <span className="flex items-center gap-2 text-[11px] font-medium">
+            <span className="material-symbols-outlined text-[17px]">{theme === "light" ? "dark_mode" : "light_mode"}</span>
+            {theme === "light" ? "Dark mode" : "Light mode"}
           </span>
-          <span className="text-[11px] text-on-surface-variant font-medium">
-            {syncActive ? "Live Sync" : "Offline"}
-          </span>
-        </div>
+          <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+        </button>
       </div>
     </nav>
   );

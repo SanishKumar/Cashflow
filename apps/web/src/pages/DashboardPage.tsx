@@ -1,15 +1,7 @@
-/**
- * Dashboard Page — Analytics Overview
- *
- * KPI cards, 6-month volume chart, and recent activity feed.
- * Clean, functional layout without clutter.
- */
-
-import { useApi } from "../hooks/useApi";
-import { dashboardApi } from "../lib/api";
 import { Link } from "react-router-dom";
-import { useState } from "react";
-import type { DashboardStats, AuditLogEntry, MonthlyVolume } from "../types/index";
+import { useApi } from "../hooks/useApi";
+import { dashboardApi, groupApi } from "../lib/api";
+import type { AuditLogEntry, DashboardStats, Group, MonthlyVolume, PendingSettlementGroup } from "../types/index";
 
 const ACTION_ICONS: Record<string, { icon: string; color: string }> = {
   GROUP_CREATED: { icon: "group_add", color: "text-primary" },
@@ -17,15 +9,22 @@ const ACTION_ICONS: Record<string, { icon: string; color: string }> = {
   MEMBER_ADDED: { icon: "person_add", color: "text-secondary" },
   MEMBER_REMOVED: { icon: "person_remove", color: "text-warning" },
   MEMBER_LEFT: { icon: "exit_to_app", color: "text-on-surface-variant" },
-  EXPENSE_ADDED: { icon: "receipt", color: "text-positive" },
+  EXPENSE_ADDED: { icon: "receipt_long", color: "text-secondary" },
   EXPENSE_DELETED: { icon: "receipt_long", color: "text-error" },
-  ROLE_CHANGED: { icon: "shield", color: "text-primary" },
-  TRANSACTION_COMPLETED: { icon: "check_circle", color: "text-positive" },
+  ROLE_CHANGED: { icon: "shield_person", color: "text-primary" },
+  TRANSACTION_COMPLETED: { icon: "task_alt", color: "text-secondary" },
   TRANSACTION_PENDING: { icon: "schedule", color: "text-warning" },
   TRANSACTION_REJECTED: { icon: "cancel", color: "text-error" },
   USER_LOGIN: { icon: "login", color: "text-on-surface-variant" },
   USER_REGISTER: { icon: "person_add", color: "text-primary" },
 };
+
+const GROUP_ACCENTS = [
+  "from-violet-500 to-indigo-600",
+  "from-emerald-500 to-teal-600",
+  "from-amber-400 to-orange-500",
+  "from-rose-500 to-pink-600",
+];
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -37,10 +36,8 @@ function formatCurrency(amount: number): string {
 }
 
 function relativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diff = now - then;
-  const minutes = Math.floor(diff / 60000);
+  const elapsed = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(elapsed / 60_000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
@@ -50,272 +47,296 @@ function relativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function formatMonthLabel(month: string): string {
-  const [year, m] = month.split("-");
-  const date = new Date(Number(year), Number(m) - 1);
-  return date.toLocaleDateString("en-US", { month: "short" });
+function getInitials(name: string): string {
+  return name.split(" ").map((part) => part[0]).join("").toUpperCase().slice(0, 2);
 }
 
 export function DashboardPage() {
   const { data: stats, loading, error } = useApi<DashboardStats>(() => dashboardApi.getStats());
+  const { data: groups, loading: groupsLoading } = useApi<Group[]>(() => groupApi.list());
 
-  if (loading) {
-    return (
-      <div className="h-full flex flex-col">
-        <header className="hidden md:flex h-14 border-b border-outline-variant/30 items-center px-6 bg-surface-container/50 shrink-0">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-on-surface-variant text-[20px]">space_dashboard</span>
-            <h2 className="text-[15px] font-semibold text-on-surface">Dashboard</h2>
-          </div>
-        </header>
-        <div className="flex-1 overflow-auto p-4 md:p-6">
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="glass-panel-sm p-3 md:p-5 h-[92px] md:h-[100px] animate-pulse">
-                <div className="h-3 bg-surface-variant rounded w-1/2 mb-3" />
-                <div className="h-5 bg-surface-variant rounded w-1/3" />
-              </div>
-            ))}
-          </div>
-          <div className="glass-panel-sm p-6 h-[220px] animate-pulse mb-6">
-            <div className="h-3 bg-surface-variant rounded w-1/4" />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <DashboardLoading />;
 
   if (error) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 animate-fade-in">
-        <div className="w-16 h-16 rounded-2xl bg-glow-error flex items-center justify-center">
+      <div className="h-full flex flex-col items-center justify-center gap-4 animate-fade-in px-6 text-center">
+        <div className="w-16 h-16 rounded-3xl bg-glow-error flex items-center justify-center">
           <span className="material-symbols-outlined text-error text-[32px]">cloud_off</span>
         </div>
-        <p className="text-[14px] font-medium text-on-surface">Unable to load dashboard</p>
-        <p className="text-[13px] text-on-surface-variant">{error}</p>
+        <div>
+          <p className="text-[16px] font-bold text-on-surface">Your overview is unavailable</p>
+          <p className="mt-1 text-[13px] text-on-surface-variant">{error}</p>
+        </div>
       </div>
     );
   }
 
   if (!stats) return null;
 
+  const isOwed = stats.netPosition > 0;
+  const isEven = stats.netPosition === 0;
+  const balanceLabel = isEven ? "All even" : isOwed ? "Owed to you" : "You owe";
+
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <header className="h-12 md:h-14 border-b border-outline-variant/30 flex items-center px-4 md:px-6 justify-end md:justify-between bg-surface-container/50 shrink-0">
-        <div className="hidden md:flex items-center gap-3">
-          <span className="material-symbols-outlined text-on-surface-variant text-[20px]">space_dashboard</span>
-          <h2 className="text-[15px] font-semibold text-on-surface">Dashboard</h2>
-        </div>
-        <Link to="/groups" className="btn-secondary w-full md:w-auto !h-10 !px-5 !text-[13px]">
-          <span className="material-symbols-outlined text-[16px]">groups</span>
-          View Groups
-        </Link>
-      </header>
+    <div className="mobile-scroll-safe h-full max-w-full overflow-x-hidden overflow-y-auto">
+      <div className="mx-auto min-w-0 max-w-[1440px] px-4 py-5 md:px-8 md:py-8">
+        <section className="mb-7 flex min-w-0 flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-primary">Your workspace</p>
+            <h1 className="text-[28px] font-bold tracking-tight text-on-surface md:text-[32px]">Shared money, made clear.</h1>
+            <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-on-surface-variant">See what your groups are spending, what needs a settle-up, and what happened most recently.</p>
+          </div>
+          <div className="flex w-full min-w-0 gap-3 md:w-auto">
+            <Link to="/ledger" className="btn-secondary flex-1 md:flex-none">
+              <span className="material-symbols-outlined text-[17px]">receipt_long</span>
+              Ledger
+            </Link>
+            <Link to="/groups" className="btn-primary flex-1 md:flex-none">
+              <span className="material-symbols-outlined text-[17px]">groups</span>
+              Your groups
+            </Link>
+          </div>
+        </section>
 
-      <div className="mobile-scroll-safe flex-1 overflow-auto p-4 md:p-6 animate-fade-in">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-          <KPICard
-            icon="group"
-            label="Groups"
-            value={String(stats.totalGroups)}
-            color="primary"
-          />
-          <KPICard
-            icon="receipt_long"
-            label="Transactions"
-            value={String(stats.totalTransactions)}
-            color="secondary"
-          />
-          <KPICard
-            icon="account_balance_wallet"
-            label="Net Position"
-            value={`${stats.netPosition >= 0 ? "+" : "-"}${formatCurrency(stats.netPosition)}`}
-            color={stats.netPosition >= 0 ? "positive" : "negative"}
-            subtitle={stats.netPosition >= 0 ? "Others owe you" : "You owe others"}
-          />
-          <KPICard
-            icon="pending_actions"
-            label="Pending"
-            value={String(stats.pendingSettlements)}
-            color={stats.pendingSettlements > 0 ? "warning" : "neutral"}
-            subtitle={stats.pendingSettlements > 0 ? "Need attention" : "All settled"}
-          />
-        </div>
-
-        {/* Chart + Activity side by side on large screens, stacked on small */}
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-          {/* Volume Chart */}
-          <div className="xl:col-span-3">
-            <VolumeChart data={stats.monthlyVolume} totalVolume={stats.totalVolume} />
+        <section className="grid min-w-0 gap-4 xl:grid-cols-4">
+          <div className="relative min-w-0 overflow-hidden rounded-[26px] bg-gradient-to-br from-[#5133db] via-[#6d4aff] to-[#a186ff] p-6 text-white shadow-[0_18px_40px_rgba(105,71,244,0.24)] xl:col-span-2">
+            <div className="absolute -right-10 -top-14 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
+            <div className="absolute -bottom-16 left-24 h-40 w-40 rounded-full bg-indigo-950/15 blur-2xl" />
+            <div className="relative flex h-full min-h-[184px] flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[12px] font-semibold text-white/80">
+                  <span className="material-symbols-outlined text-[18px]">account_balance_wallet</span>
+                  Settlement snapshot
+                </div>
+                <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.09em]">Across {stats.totalGroups} group{stats.totalGroups === 1 ? "" : "s"}</span>
+              </div>
+              <div>
+                <p className="text-[13px] text-white/75">{balanceLabel}</p>
+                <p className="mt-1 text-[36px] font-bold tracking-tight">{isEven ? "$0" : `${isOwed ? "+" : "-"}${formatCurrency(stats.netPosition)}`}</p>
+                <p className="mt-2 max-w-sm text-[12px] leading-relaxed text-white/75">
+                  {isEven ? "Everyone is square across the groups you can see." : "A clear view of your current position across every shared expense."}
+                </p>
+              </div>
+              <Link to="/groups" className="flex w-fit items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-[12px] font-bold text-[#5133db] shadow-sm transition-transform hover:-translate-y-0.5">
+                Review groups
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </Link>
+            </div>
           </div>
 
-          {/* Recent Activity */}
-          <div className="xl:col-span-2">
-            <ActivityFeed entries={stats.recentActivity} />
-          </div>
+          <MetricTile icon="groups" label="Your groups" value={String(stats.totalGroups)} hint="Shared workspaces" tone="primary" />
+          <MetricTile icon="receipt_long" label="Expenses tracked" value={String(stats.totalTransactions)} hint="Across all groups" tone="emerald" />
+        </section>
+
+        <section className="mt-6 grid gap-6 xl:grid-cols-3">
+          <GroupWorkspacePreview groups={groups ?? []} loading={groupsLoading} />
+          <SettlementPanel pending={stats.pendingSettlements} pendingGroups={stats.pendingGroups ?? []} />
+        </section>
+
+        <section className="mt-6 grid gap-6 xl:grid-cols-5">
+          <SpendingTrend data={stats.monthlyVolume} totalVolume={stats.totalVolume} />
+          <ActivityStream entries={stats.recentActivity} />
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function DashboardLoading() {
+  return (
+    <div className="mobile-scroll-safe h-full overflow-auto">
+      <div className="mx-auto max-w-[1440px] px-4 py-5 md:px-8 md:py-8 animate-pulse">
+        <div className="h-3 w-28 rounded bg-surface-variant" />
+        <div className="mt-3 h-9 w-72 rounded bg-surface-variant" />
+        <div className="mt-2 h-4 w-[420px] max-w-full rounded bg-surface-variant" />
+        <div className="mt-8 grid gap-4 xl:grid-cols-4">
+          <div className="h-[184px] rounded-[26px] bg-surface-variant xl:col-span-2" />
+          <div className="h-[184px] rounded-[26px] bg-surface-variant" />
+          <div className="h-[184px] rounded-[26px] bg-surface-variant" />
+        </div>
+        <div className="mt-6 grid gap-6 xl:grid-cols-3">
+          <div className="h-72 rounded-[24px] bg-surface-variant xl:col-span-2" />
+          <div className="h-72 rounded-[24px] bg-surface-variant" />
         </div>
       </div>
     </div>
   );
 }
 
-// ── KPI Card ──────────────────────────────
-
-function KPICard({
-  icon,
-  label,
-  value,
-  color,
-  subtitle,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  color: string;
-  subtitle?: string;
-}) {
-  const colorMap: Record<string, { icon: string; value: string; glow: string }> = {
-    primary: { icon: "text-primary", value: "text-primary", glow: "bg-glow-primary" },
-    secondary: { icon: "text-secondary", value: "text-secondary", glow: "bg-glow-secondary" },
-    positive: { icon: "text-secondary", value: "text-secondary", glow: "bg-glow-secondary" },
-    negative: { icon: "text-error", value: "text-error", glow: "bg-glow-error" },
-    warning: { icon: "text-warning", value: "text-warning", glow: "bg-warning/10" },
-    neutral: { icon: "text-on-surface-variant", value: "text-on-surface-variant", glow: "bg-surface-variant" },
-  };
-
-  const c = colorMap[color] ?? colorMap.neutral;
+function MetricTile({ icon, label, value, hint, tone }: { icon: string; label: string; value: string; hint: string; tone: "primary" | "emerald" }) {
+  const toneClass = tone === "primary" ? "bg-primary/10 text-primary" : "bg-secondary/10 text-secondary";
 
   return (
-    <div className="glass-panel-sm p-3 md:p-5 flex flex-col gap-2 group hover:border-outline/50 transition-all duration-200">
-      <div className="flex items-center justify-between">
-        <span className="text-label text-[10px]">{label}</span>
-        <div className={`w-7 h-7 rounded-lg ${c.glow} flex items-center justify-center`}>
-          <span className={`material-symbols-outlined text-[16px] ${c.icon}`}>{icon}</span>
-        </div>
-      </div>
-      <span className={`text-data-lg ${c.value}`}>{value}</span>
-      {subtitle && (
-        <span className="text-[10px] text-on-surface-variant -mt-1">{subtitle}</span>
-      )}
-    </div>
-  );
-}
-
-// ── Volume Chart (Pure CSS bar chart) ──────────────────────
-
-function VolumeChart({ data, totalVolume }: { data: MonthlyVolume[]; totalVolume: number }) {
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const maxVolume = Math.max(...data.map((d) => d.volume), 1);
-
-  return (
-    <div className="glass-panel-sm p-5">
-      <div className="flex items-center justify-between mb-5">
+    <div className="min-w-0 rounded-[26px] border border-outline-variant/70 bg-surface-container p-5 shadow-[0_10px_28px_rgba(31,35,54,0.05)]">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-[13px] font-semibold text-on-surface">Transaction Volume</h3>
-          <p className="text-[11px] text-on-surface-variant mt-0.5">Last 6 months</p>
+          <p className="text-[11px] font-semibold text-on-surface-variant">{label}</p>
+          <p className="mt-2 text-[30px] font-bold tracking-tight text-on-surface">{value}</p>
+        </div>
+        <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${toneClass}`}>
+          <span className="material-symbols-outlined text-[20px]">{icon}</span>
+        </div>
+      </div>
+      <p className="mt-4 text-[11px] text-on-surface-variant">{hint}</p>
+    </div>
+  );
+}
+
+function GroupWorkspacePreview({ groups, loading }: { groups: Group[]; loading: boolean }) {
+  return (
+    <section className="min-w-0 rounded-[24px] border border-outline-variant/70 bg-surface-container p-5 shadow-[0_10px_28px_rgba(31,35,54,0.05)] xl:col-span-2">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div>
+          <p className="text-[15px] font-bold text-on-surface">Your groups</p>
+          <p className="mt-1 text-[11px] text-on-surface-variant">Jump back into the shared expenses that matter.</p>
+        </div>
+        <Link to="/groups" className="text-[11px] font-bold text-primary hover:underline">View all</Link>
+      </div>
+
+      {loading ? (
+        <div className="flex flex-col gap-3 animate-pulse">
+          {[1, 2, 3].map((item) => <div key={item} className="h-[74px] rounded-2xl bg-surface-variant" />)}
+        </div>
+      ) : groups.length === 0 ? (
+        <div className="flex min-h-[208px] flex-col items-center justify-center px-4 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary"><span className="material-symbols-outlined">group_add</span></div>
+          <p className="mt-3 text-[13px] font-bold text-on-surface">Start your first group</p>
+          <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-on-surface-variant">Create a shared space for a trip, home, or team—then add expenses as they happen.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {groups.slice(0, 3).map((group, index) => (
+            <Link key={group.id} to={`/groups/${group.id}`} className="group flex min-w-0 items-center gap-3 rounded-2xl border border-transparent px-2 py-2 transition-colors hover:border-outline-variant hover:bg-surface-container-low">
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${GROUP_ACCENTS[index % GROUP_ACCENTS.length]} text-[13px] font-bold text-white shadow-sm`}>
+                {getInitials(group.name)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-bold text-on-surface">{group.name}</p>
+                <p className="mt-0.5 truncate text-[11px] text-on-surface-variant">{group.description || "A shared expense workspace"}</p>
+              </div>
+              <div className="hidden items-center gap-2 sm:flex">
+                <div className="flex -space-x-2">
+                  {group.members.slice(0, 3).map((member, memberIndex) => (
+                    <span key={member.id} className={`avatar avatar-sm avatar-${(index + memberIndex) % 6} !h-6 !w-6 !text-[8px] ring-2 ring-surface-container`} title={member.user.name}>{getInitials(member.user.name)}</span>
+                  ))}
+                </div>
+                <span className="text-[10px] font-medium text-on-surface-variant">{group._count.transactions} expenses</span>
+              </div>
+              <span className="material-symbols-outlined text-[18px] text-outline transition-colors group-hover:text-primary">arrow_forward</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SettlementPanel({ pending, pendingGroups }: { pending: number; pendingGroups: PendingSettlementGroup[] }) {
+  const hasPending = pending > 0;
+
+  return (
+    <section className="min-w-0 rounded-[24px] border border-outline-variant/70 bg-surface-container p-5 shadow-[0_10px_28px_rgba(31,35,54,0.05)]">
+      <div className="flex items-center justify-between">
+        <p className="text-[15px] font-bold text-on-surface">Settle-up check</p>
+        <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${hasPending ? "bg-warning/10 text-warning" : "bg-secondary/10 text-secondary"}`}>
+          <span className="material-symbols-outlined text-[19px]">{hasPending ? "pending_actions" : "task_alt"}</span>
+        </div>
+      </div>
+      <div className="mt-5">
+        <p className="text-[32px] font-bold tracking-tight text-on-surface">{pending}</p>
+        <p className="mt-1 text-[13px] font-semibold text-on-surface">{hasPending ? `payment${pending === 1 ? "" : "s"} waiting for confirmation` : "pending payments"}</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-on-surface-variant">{hasPending ? "Open an affected group to review and confirm its pending settlement payments." : "There are no settlement payments waiting for confirmation."}</p>
+      </div>
+      {hasPending && (
+        <div className="mt-5 flex max-h-[190px] flex-col gap-2 overflow-y-auto pr-1">
+          {pendingGroups.length > 0 ? pendingGroups.map((group) => (
+            <Link
+              key={group.groupId}
+              to={`/groups/${group.groupId}?status=pending`}
+              className="group flex min-w-0 items-center gap-3 rounded-xl border border-outline-variant/70 bg-surface-container-high px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-surface-container-highest"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-warning/10 text-warning">
+                <span className="material-symbols-outlined text-[17px]">pending_actions</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[11px] font-bold text-on-surface">{group.groupName}</p>
+                <p className="mt-0.5 text-[10px] text-on-surface-variant">{group.pendingCount} pending payment{group.pendingCount === 1 ? "" : "s"}</p>
+              </div>
+              <span className="material-symbols-outlined text-[17px] text-outline transition-colors group-hover:text-primary">arrow_forward</span>
+            </Link>
+          )) : (
+            <p className="rounded-xl bg-surface-container-high px-3 py-3 text-[10px] leading-relaxed text-on-surface-variant">Affected groups will appear here after the API update is deployed.</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SpendingTrend({ data, totalVolume }: { data: MonthlyVolume[]; totalVolume: number }) {
+  const maxVolume = Math.max(...data.map((item) => item.volume), 1);
+
+  return (
+    <section className="min-w-0 rounded-[24px] border border-outline-variant/70 bg-surface-container p-5 shadow-[0_10px_28px_rgba(31,35,54,0.05)] xl:col-span-3">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[15px] font-bold text-on-surface">Shared spending</p>
+          <p className="mt-1 text-[11px] text-on-surface-variant">The last six months across your groups.</p>
         </div>
         <div className="text-right">
-          <span className="text-data-lg text-secondary">{formatCurrency(totalVolume)}</span>
-          <p className="text-[10px] text-on-surface-variant">Total volume</p>
+          <p className="text-[20px] font-bold tracking-tight text-on-surface">{formatCurrency(totalVolume)}</p>
+          <p className="mt-0.5 text-[10px] font-medium text-on-surface-variant">tracked total</p>
         </div>
       </div>
-
-      {/* Bar chart */}
-      <div className="flex items-end gap-1.5 sm:gap-3 h-[140px] min-w-0">
-        {data.map((d, i) => {
-          const heightPct = maxVolume > 0 ? (d.volume / maxVolume) * 100 : 0;
-          const isHovered = hoveredIdx === i;
-          const isCurrentMonth = i === data.length - 1;
-
+      <div className="mt-7 flex h-[156px] items-end gap-2 sm:gap-4">
+        {data.map((item, index) => {
+          const isCurrent = index === data.length - 1;
+          const height = Math.max((item.volume / maxVolume) * 100, 4);
+          const label = new Date(`${item.month}-01T00:00:00`).toLocaleDateString("en-US", { month: "short" });
           return (
-            <div
-              key={d.month}
-              className="flex-1 flex flex-col items-center gap-2 relative"
-              onMouseEnter={() => setHoveredIdx(i)}
-              onMouseLeave={() => setHoveredIdx(null)}
-            >
-              {/* Tooltip */}
-              {isHovered && d.volume > 0 && (
-                <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-surface-container-highest text-on-surface text-[10px] font-mono px-2 py-1 rounded shadow-lg border border-outline-variant/30 whitespace-nowrap z-10 animate-fade-in">
-                  {formatCurrency(d.volume)}
-                </div>
-              )}
-
-              {/* Bar */}
-              <div className="w-full flex justify-center" style={{ height: "140px" }}>
-                <div
-                  className={`w-full min-w-[8px] max-w-[40px] rounded-t-md transition-all duration-300 ${
-                    isCurrentMonth
-                      ? "bg-gradient-to-t from-primary-container to-primary/80"
-                      : isHovered
-                        ? "bg-primary/50"
-                        : "bg-surface-variant"
-                  }`}
-                  style={{
-                    height: `${Math.max(heightPct, 2)}%`,
-                    marginTop: "auto",
-                  }}
-                />
+            <div key={item.month} className="group flex h-full flex-1 flex-col justify-end" title={`${label}: ${formatCurrency(item.volume)}`}>
+              <div className="relative flex flex-1 items-end">
+                <div className={`w-full rounded-t-xl transition-all duration-200 group-hover:brightness-105 ${isCurrent ? "bg-gradient-to-t from-[#5133db] to-[#a186ff] shadow-[0_8px_18px_rgba(105,71,244,0.22)]" : "bg-primary/15 group-hover:bg-primary/25"}`} style={{ height: `${height}%` }} />
               </div>
-
-              {/* Label */}
-              <span className={`text-[10px] font-medium ${isCurrentMonth ? "text-primary" : "text-on-surface-variant"}`}>
-                {formatMonthLabel(d.month)}
-              </span>
+              <span className={`mt-3 truncate text-center text-[10px] font-semibold ${isCurrent ? "text-primary" : "text-on-surface-variant"}`}>{label}</span>
             </div>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
 
-// ── Activity Feed ──────────────────────────────
-
-function ActivityFeed({ entries }: { entries: AuditLogEntry[] }) {
+function ActivityStream({ entries }: { entries: AuditLogEntry[] }) {
   return (
-    <div className="glass-panel-sm p-5 flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-[13px] font-semibold text-on-surface">Recent Activity</h3>
-        <Link to="/ledger" className="text-[11px] text-primary font-medium hover:underline">
-          View all
-        </Link>
+    <section className="min-w-0 rounded-[24px] border border-outline-variant/70 bg-surface-container p-5 shadow-[0_10px_28px_rgba(31,35,54,0.05)] xl:col-span-2">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div>
+          <p className="text-[15px] font-bold text-on-surface">Recent activity</p>
+          <p className="mt-1 text-[11px] text-on-surface-variant">A concise log of your groups.</p>
+        </div>
+        <Link to="/ledger?tab=activity" className="text-[11px] font-bold text-primary hover:underline">All activity</Link>
       </div>
-
       {entries.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center py-8 gap-3">
-          <span className="material-symbols-outlined text-outline text-[28px]">history</span>
-          <p className="text-[12px] text-on-surface-variant">No recent activity</p>
+        <div className="flex min-h-[150px] flex-col items-center justify-center text-center">
+          <span className="material-symbols-outlined text-[28px] text-outline">history</span>
+          <p className="mt-2 text-[12px] font-semibold text-on-surface">No recent activity</p>
+          <p className="mt-1 text-[11px] text-on-surface-variant">New expenses and settlements will appear here.</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-0.5 overflow-y-auto max-h-[260px]">
-          {entries.map((entry, i) => {
+        <div className="flex max-h-[220px] flex-col overflow-y-auto">
+          {entries.map((entry) => {
             const meta = ACTION_ICONS[entry.action] ?? { icon: "info", color: "text-on-surface-variant" };
             return (
-              <div
-                key={entry.id}
-                className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-glass-hover transition-colors animate-slide-up"
-                style={{ animationDelay: `${i * 30}ms` }}
-              >
-                <div className={`w-7 h-7 rounded-md bg-surface-variant flex items-center justify-center shrink-0 mt-0.5`}>
-                  <span className={`material-symbols-outlined text-[14px] ${meta.color}`}>{meta.icon}</span>
+              <div key={entry.id} className="flex gap-3 border-b border-outline-variant/50 py-3 last:border-0 first:pt-0">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surface-container-high">
+                  <span className={`material-symbols-outlined text-[16px] ${meta.color}`}>{meta.icon}</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] text-on-surface leading-tight">
-                    <span className="font-semibold">{entry.user.name.split(" ")[0]}</span>{" "}
-                    <span className="text-on-surface-variant">
-                      {entry.details || entry.action.replace(/_/g, " ").toLowerCase()}
-                    </span>
-                  </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[10px] text-on-surface-variant">{relativeTime(entry.createdAt)}</span>
-                    {entry.group && (
-                      <span className="text-[9px] text-primary bg-primary/10 px-1.5 py-0.5 rounded-full font-medium">
-                        {entry.group.name}
-                      </span>
-                    )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[12px] leading-relaxed text-on-surface"><span className="font-bold">{entry.user.name.split(" ")[0]}</span>{" "}<span className="text-on-surface-variant">{entry.details || entry.action.replace(/_/g, " ").toLowerCase()}</span></p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-on-surface-variant">
+                    <span>{relativeTime(entry.createdAt)}</span>
+                    {entry.group && <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">{entry.group.name}</span>}
                   </div>
                 </div>
               </div>
@@ -323,6 +344,6 @@ function ActivityFeed({ entries }: { entries: AuditLogEntry[] }) {
           })}
         </div>
       )}
-    </div>
+    </section>
   );
 }

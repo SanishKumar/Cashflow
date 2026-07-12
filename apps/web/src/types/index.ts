@@ -91,11 +91,18 @@ export interface MonthlyVolume {
   volume: number;
 }
 
+export interface PendingSettlementGroup {
+  groupId: string;
+  groupName: string;
+  pendingCount: number;
+}
+
 export interface DashboardStats {
   totalGroups: number;
   totalTransactions: number;
   totalVolume: number;
   pendingSettlements: number;
+  pendingGroups: PendingSettlementGroup[];
   netPosition: number;
   recentActivity: AuditLogEntry[];
   monthlyVolume: MonthlyVolume[];

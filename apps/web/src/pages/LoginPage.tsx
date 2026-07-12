@@ -8,6 +8,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../contexts/UserContext";
+import { BrandMark } from "../components/BrandMark";
 
 type AuthTab = "login" | "register";
 
@@ -30,19 +31,6 @@ export function LoginPage() {
       navigate("/", { replace: true });
     }
   }, [currentUserId, authLoading, navigate]);
-
-  // Auto-login as demo user on first visit
-  useEffect(() => {
-    const hasSeenDemo = sessionStorage.getItem("hasSeenDemo");
-    if (!hasSeenDemo && !authLoading && !currentUserId) {
-      sessionStorage.setItem("hasSeenDemo", "true");
-      setSubmitting(true);
-      login("alex@cashflow.dev", "Password123").catch((err) => {
-        setError("Demo login failed: " + err.message);
-        setSubmitting(false);
-      });
-    }
-  }, [authLoading, currentUserId, login]);
 
   const resetForm = () => {
     setEmail("");
@@ -69,6 +57,19 @@ export function LoginPage() {
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDemoLogin = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await login("alex@cashflow.dev", "Password123");
+      navigate("/", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The demo workspace is unavailable right now");
     } finally {
       setSubmitting(false);
     }
@@ -105,7 +106,7 @@ export function LoginPage() {
     return (
       <div className="h-[100dvh] w-full bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-container to-[#4f46e5] flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-container to-[#5133db] flex items-center justify-center">
             <span className="material-symbols-outlined text-white text-[24px] animate-spin">sync</span>
           </div>
           <p className="text-[13px] text-on-surface-variant font-medium">Restoring session...</p>
@@ -118,15 +119,13 @@ export function LoginPage() {
     <div className="h-[100dvh] w-full bg-background flex items-center justify-center overflow-auto">
       <div className="w-full max-w-[420px] px-4 py-6 sm:px-6 sm:py-12 flex flex-col items-center animate-fade-in">
         {/* Logo */}
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-container to-[#4f46e5] flex items-center justify-center mb-6 shadow-lg shadow-primary/20">
-          <span className="material-symbols-outlined text-white text-[28px]">account_balance</span>
-        </div>
+        <BrandMark className="mb-6 h-14 w-14 drop-shadow-[0_12px_20px_rgba(105,71,244,0.24)]" title="CashFlow" />
 
         <h1 className="text-[28px] font-bold text-on-surface tracking-tight mb-1">
           CashFlow
         </h1>
         <p className="text-[14px] text-on-surface-variant mb-8">
-          Enterprise debt minimization platform
+          Shared expenses, clearly settled
         </p>
 
         {/* Tab Switcher */}
@@ -315,21 +314,12 @@ export function LoginPage() {
           </form>
         )}
 
-        {/* Demo Credentials */}
-        <div className="w-full mt-8 pt-6 border-t border-outline-variant/20">
-          <p className="text-[11px] text-on-surface-variant text-center mb-3 uppercase font-medium tracking-wider">
-            Demo Credentials
-          </p>
-          <div className="glass-panel-sm p-3 text-[12px] font-mono text-on-surface-variant space-y-1">
-            <div className="flex justify-between">
-              <span>alex@cashflow.dev</span>
-              <span className="text-on-surface">Password123</span>
-            </div>
-            <div className="flex justify-between">
-              <span>sarah@cashflow.dev</span>
-              <span className="text-on-surface">Password123</span>
-            </div>
-          </div>
+        <div className="w-full mt-6 pt-5 border-t border-outline-variant/50">
+          <button type="button" onClick={handleDemoLogin} disabled={submitting} className="btn-secondary h-11 w-full">
+            <span className="material-symbols-outlined text-[17px]">explore</span>
+            Explore the demo workspace
+          </button>
+          <p className="mt-2 text-center text-[10px] text-on-surface-variant">Uses shared sample data. No account needed.</p>
         </div>
       </div>
     </div>

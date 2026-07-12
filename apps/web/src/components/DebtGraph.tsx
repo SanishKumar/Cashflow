@@ -123,11 +123,11 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
       target: s.to,
       animated: true,
       label: new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(s.amount),
-      labelStyle: { fill: "#e2e4f0", fontFamily: "JetBrains Mono", fontSize: 11, fontWeight: 600 },
-      labelBgStyle: { fill: "#161821", stroke: "#353849", strokeWidth: 1, rx: 6, ry: 6 },
+      labelStyle: { fill: "var(--color-on-surface)", fontFamily: "JetBrains Mono", fontSize: 11, fontWeight: 600 },
+      labelBgStyle: { fill: "var(--color-surface-container)", stroke: "var(--color-outline-variant)", strokeWidth: 1, rx: 6, ry: 6 },
       labelBgPadding: [8, 4] as [number, number],
-      style: { stroke: s.amount > 500 ? "#fb7185" : "#8b9cf7", strokeWidth: Math.max(1.5, Math.min(3, s.amount / 300)) },
-      markerEnd: { type: MarkerType.ArrowClosed, color: s.amount > 500 ? "#fb7185" : "#8b9cf7", width: 18, height: 18 },
+      style: { stroke: s.amount > 500 ? "var(--color-tertiary)" : "var(--color-primary)", strokeWidth: Math.max(1.5, Math.min(3, s.amount / 300)) },
+      markerEnd: { type: MarkerType.ArrowClosed, color: s.amount > 500 ? "var(--color-tertiary)" : "var(--color-primary)", width: 18, height: 18 },
     })),
     [settlements]
   );
@@ -165,7 +165,7 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={0.5} color="#353849" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={0.5} color="var(--color-outline-variant)" />
       </ReactFlow>
 
       {/* Stats Overlay */}

@@ -2,12 +2,21 @@
 // Groups Dashboard — v2.1 Modernized
 // ──────────────────────────────────────────────
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { groupApi, userApi } from "../lib/api";
 import { useUser } from "../contexts/UserContext";
 import type { Group } from "../types/index";
+
+const GROUP_ACCENTS = [
+  "from-violet-500 to-indigo-600",
+  "from-emerald-500 to-teal-600",
+  "from-amber-400 to-orange-500",
+  "from-rose-500 to-pink-600",
+  "from-cyan-500 to-blue-600",
+  "from-fuchsia-500 to-purple-600",
+];
 
 function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -15,6 +24,7 @@ function getInitials(name: string): string {
 
 export function GroupsPage() {
   const { currentUserId } = useUser();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: groups, loading, error, refetch } = useApi<Group[]>(() => groupApi.list());
   const { data: users } = useApi(() => userApi.list());
   const userList = users ?? [];
@@ -26,8 +36,21 @@ export function GroupsPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get("q")?.toLowerCase() || "";
+  const createRequested = searchParams.get("create") === "1";
+
+  useEffect(() => {
+    setShowCreate(createRequested);
+  }, [createRequested]);
+
+  const setCreatePanelOpen = (open: boolean) => {
+    setShowCreate(open);
+    setCreateError(null);
+    const nextParams = new URLSearchParams(searchParams);
+    if (open) nextParams.set("create", "1");
+    else nextParams.delete("create");
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const filteredGroups = groups?.filter(
     (g) => g.name.toLowerCase().includes(searchQuery) || g.description?.toLowerCase().includes(searchQuery)
@@ -48,7 +71,7 @@ export function GroupsPage() {
       setNewGroupDesc("");
       setCurrency("USD");
       setSelectedMembers([]);
-      setShowCreate(false);
+      setCreatePanelOpen(false);
       refetch();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create group. Please try again.");
@@ -66,123 +89,37 @@ export function GroupsPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <header className="h-14 border-b border-outline-variant/30 flex items-center px-4 md:px-6 justify-end md:justify-between shrink-0 bg-surface-container/50">
-        <div className="hidden md:flex items-center gap-3">
-          <span className="material-symbols-outlined text-on-surface-variant text-[20px]">dashboard</span>
-          <h2 className="text-[15px] font-semibold text-on-surface">Groups</h2>
+      <header className="flex shrink-0 flex-col gap-4 px-4 pb-3 pt-5 md:flex-row md:items-end md:justify-between md:px-8 md:pb-4 md:pt-7">
+        <div className="flex items-end gap-3">
+          <div>
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Workspace</p>
+            <h2 className="text-[24px] font-bold tracking-tight text-on-surface">Your groups</h2>
+            <p className="mt-1 text-[12px] text-on-surface-variant">Every trip, home, and team in one place.</p>
+          </div>
           {filteredGroups && (
-            <span className="text-[11px] text-on-surface-variant bg-surface-variant px-2 py-0.5 rounded-full font-medium">
+            <span className="mb-0.5 rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
               {filteredGroups.length}
             </span>
           )}
         </div>
         {!showCreate && (
-          <button onClick={() => setShowCreate(true)} className="btn-primary w-full md:w-auto !h-10 !px-5 !text-[13px]">
+          <button onClick={() => setCreatePanelOpen(true)} className="btn-primary w-full md:w-auto !h-10 !px-5 !text-[13px]">
             <span className="material-symbols-outlined text-[16px]">add</span>
             New Group
           </button>
         )}
       </header>
 
-      {/* Create Group Panel */}
-      {false && showCreate && (
-        <div className="hidden">
-          <div className="max-w-xl flex flex-col gap-4">
-            <h3 className="text-[14px] font-semibold text-on-surface">Create New Group</h3>
-
-            {createError && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-glow-error border border-error/20 text-error text-[13px]">
-                <span className="material-symbols-outlined text-[16px]">error</span>
-                {createError}
-              </div>
-            )}
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-label">Group Name</label>
-              <input
-                className="input-field"
-                placeholder="e.g., Engineering Team, Road Trip, Apartment..."
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                autoFocus
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-label">Description <span className="text-outline">(optional)</span></label>
-              <input
-                className="input-field"
-                placeholder="What's this group for?"
-                value={newGroupDesc}
-                onChange={(e) => setNewGroupDesc(e.target.value)}
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-label">Currency</label>
-              <select
-                className="input-field"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-              >
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-                <option value="GBP">GBP (£)</option>
-                <option value="INR">INR (₹)</option>
-                <option value="CAD">CAD ($)</option>
-                <option value="AUD">AUD ($)</option>
-              </select>
-            </div>
-
-            {userList.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <label className="text-label">Add Members</label>
-                <div className="flex flex-wrap gap-2">
-                  {userList.map((user) => (
-                    <button
-                      key={user.id}
-                      onClick={() => toggleMember(user.id)}
-                      className={`chip ${selectedMembers.includes(user.id) ? "chip-active" : ""}`}
-                    >
-                      <span className={`avatar avatar-sm avatar-${userList.indexOf(user) % 6} !w-5 !h-5 !text-[9px]`}>
-                        {getInitials(user.name)}
-                      </span>
-                      {user.name}
-                      {selectedMembers.includes(user.id) && (
-                        <span className="material-symbols-outlined text-[14px]">check</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-3 mt-1">
-              <button
-                onClick={handleCreate}
-                disabled={creating || !newGroupName.trim()}
-                className="btn-primary"
-              >
-                {creating ? "Creating..." : "Create Group"}
-              </button>
-              <button onClick={() => { setShowCreate(false); setCreateError(null); }} className="btn-secondary">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Groups Grid */}
-      <div className="mobile-scroll-safe flex-1 overflow-auto p-4 md:p-6">
+      <div className="mobile-scroll-safe flex-1 overflow-auto px-4 pb-6 md:px-8 md:pb-8">
         {showCreate && (
-          <div className="mb-5 border border-outline-variant/30 rounded-lg p-4 md:p-5 bg-surface-container/30 animate-slide-down">
+          <div className="mb-6 rounded-[24px] border border-primary/15 bg-surface-container p-5 shadow-[0_12px_32px_rgba(31,35,54,0.06)] animate-slide-down">
             <div className="max-w-xl flex flex-col gap-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-[14px] font-semibold text-on-surface">Create New Group</h3>
                 <button
                   type="button"
-                  onClick={() => { setShowCreate(false); setCreateError(null); }}
+                  onClick={() => setCreatePanelOpen(false)}
                   className="touch-target inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-variant hover:text-on-surface transition-colors"
                   aria-label="Close create group"
                 >
@@ -265,7 +202,7 @@ export function GroupsPage() {
                 >
                   {creating ? "Creating..." : "Create Group"}
                 </button>
-                <button onClick={() => { setShowCreate(false); setCreateError(null); }} className="btn-secondary">
+                <button onClick={() => setCreatePanelOpen(false)} className="btn-secondary">
                   Cancel
                 </button>
               </div>
@@ -301,7 +238,7 @@ export function GroupsPage() {
         )}
 
         {!loading && !error && filteredGroups && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-fade-in">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 animate-fade-in">
             {filteredGroups.map((group, idx) => (
               <GroupCard key={group.id} group={group} index={idx} currentUserId={currentUserId} />
             ))}
@@ -330,11 +267,14 @@ function GroupCard({ group, index, currentUserId }: { group: Group; index: numbe
   const myRole = myMembership?.role ?? "MEMBER";
 
   return (
-    <Link to={`/groups/${group.id}`} className="card-interactive p-5 flex flex-col gap-3 cursor-pointer group">
-      <div className="flex justify-between items-start">
-        <div className="flex-1 min-w-0">
+    <Link to={`/groups/${group.id}`} className="group flex min-h-[190px] cursor-pointer flex-col rounded-[24px] border border-outline-variant/70 bg-surface-container p-5 shadow-[0_10px_28px_rgba(31,35,54,0.05)] transition-all duration-200 hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_18px_32px_rgba(31,35,54,0.1)]">
+      <div className="flex items-start gap-3">
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${GROUP_ACCENTS[index % GROUP_ACCENTS.length]} text-[13px] font-bold text-white shadow-sm`}>
+          {getInitials(group.name)}
+        </div>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="text-[14px] font-semibold text-on-surface group-hover:text-primary transition-colors truncate">
+            <h3 className="truncate text-[15px] font-bold text-on-surface transition-colors group-hover:text-primary">
               {group.name}
             </h3>
             <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
@@ -349,12 +289,12 @@ function GroupCard({ group, index, currentUserId }: { group: Group; index: numbe
             <p className="text-[12px] text-on-surface-variant mt-0.5 line-clamp-1">{group.description}</p>
           )}
         </div>
-        <span className="material-symbols-outlined text-outline-variant text-[18px] group-hover:text-primary transition-colors">
-          arrow_forward
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-outline transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+          <span className="material-symbols-outlined text-[17px]">arrow_forward</span>
         </span>
       </div>
 
-      <div className="flex items-center justify-between mt-auto pt-2 border-t border-outline-variant/30">
+      <div className="mt-auto flex items-center justify-between border-t border-outline-variant/60 pt-4">
         {/* Member avatars */}
         <div className="flex -space-x-1.5">
           {group.members.slice(0, 4).map((member, i) => (
@@ -373,10 +313,10 @@ function GroupCard({ group, index, currentUserId }: { group: Group; index: numbe
           )}
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] text-on-surface-variant font-medium">
-          <span>{group.members.length} members</span>
+        <div className="flex items-center gap-3 text-[10px] font-semibold text-on-surface-variant">
+          <span>{group.members.length} people</span>
           <span className="w-1 h-1 rounded-full bg-outline-variant" />
-          <span>{group._count.transactions} txns</span>
+          <span>{group._count.transactions} expenses</span>
         </div>
       </div>
     </Link>

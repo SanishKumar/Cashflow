@@ -1,130 +1,73 @@
-// ──────────────────────────────────────────────
-// Settings Page — App Configuration & Status
-// ──────────────────────────────────────────────
-
-import { useState } from "react";
-import { useApi } from "../hooks/useApi";
+import { useTheme } from "../contexts/ThemeContext";
 
 export function SettingsPage() {
-  const { data: health, loading } = useApi<{ status: string; uptime: number; version: string }>(async () => {
-    const API_URL = import.meta.env.VITE_API_URL || "";
-    const res = await fetch(`${API_URL}/api/health`);
-    return res.json();
-  });
-
-  const [theme] = useState<"dark" | "light">("dark");
+  const { theme, setTheme } = useTheme();
 
   return (
     <div className="h-full flex flex-col">
-      <header className="hidden md:flex h-14 border-b border-outline-variant/30 items-center px-6 bg-surface-container/50 shrink-0">
-        <span className="material-symbols-outlined text-on-surface-variant text-[20px] mr-3">tune</span>
-        <h2 className="text-[15px] font-semibold text-on-surface">Settings</h2>
+      <header className="shrink-0 px-4 pb-3 pt-5 md:px-8 md:pb-4 md:pt-7">
+        <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Preferences</p>
+        <h2 className="text-[24px] font-bold tracking-tight text-on-surface">Settings</h2>
+        <p className="mt-1 text-[12px] text-on-surface-variant">Choose how CashFlow looks and understand how it handles shared expenses.</p>
       </header>
 
-      <div className="mobile-scroll-safe flex-1 overflow-auto px-4 py-4 md:px-6 md:py-6">
-        <div className="max-w-2xl flex flex-col gap-6">
-          {/* Appearance */}
+      <div className="mobile-scroll-safe flex-1 overflow-auto px-4 pb-6 md:px-8 md:pb-8">
+        <div className="max-w-3xl flex flex-col gap-7">
           <section>
             <h3 className="text-section-title mb-4">Appearance</h3>
-            <div className="glass-panel-sm p-4 flex items-center justify-between">
+            <div className="rounded-2xl border border-outline-variant/70 bg-surface-container p-4 shadow-[0_8px_20px_rgba(31,35,54,0.04)] sm:flex sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-surface-variant flex items-center justify-center">
-                  <span className="material-symbols-outlined text-on-surface-variant text-[20px]">
-                    {theme === "dark" ? "dark_mode" : "light_mode"}
-                  </span>
+                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]">{theme === "dark" ? "dark_mode" : "light_mode"}</span>
                 </div>
                 <div>
-                  <p className="text-[13px] font-medium text-on-surface">Theme</p>
-                  <p className="text-[12px] text-on-surface-variant">Currently using dark mode</p>
+                  <p className="text-[13px] font-bold text-on-surface">Theme</p>
+                  <p className="text-[11px] text-on-surface-variant">Your choice is saved on this device.</p>
                 </div>
               </div>
-              <div className="flex gap-1 bg-surface-variant/50 rounded-lg p-0.5">
-                <button className={`h-8 px-3 rounded-md text-[12px] font-medium transition-all ${
-                  theme === "dark" ? "bg-surface-container-high text-on-surface shadow-sm" : "text-on-surface-variant"
-                }`}>
-                  Dark
-                </button>
-                <button className="h-8 px-3 rounded-md text-[12px] font-medium text-on-surface-variant cursor-not-allowed opacity-50" title="Coming soon">
-                  Light
-                </button>
+              <div className="mt-4 flex gap-1 rounded-xl bg-surface-container-high p-1 sm:mt-0">
+                <ThemeButton active={theme === "light"} icon="light_mode" label="Light" onClick={() => setTheme("light")} />
+                <ThemeButton active={theme === "dark"} icon="dark_mode" label="Dark" onClick={() => setTheme("dark")} />
               </div>
             </div>
           </section>
 
-          {/* Server Status */}
           <section>
-            <h3 className="text-section-title mb-4">Server Status</h3>
-            <div className="glass-panel-sm overflow-hidden">
-              {loading ? (
-                <div className="p-4 animate-pulse">
-                  <div className="h-4 w-32 bg-surface-variant rounded mb-2" />
-                  <div className="h-3 w-48 bg-surface-variant rounded" />
-                </div>
-              ) : health ? (
-                <div className="divide-y divide-glass-border">
-                  <StatusRow label="API Status" value={health.status} badge="online" />
-                  <StatusRow label="Version" value={health.version || "2.1.0"} />
-                  <StatusRow label="Uptime" value={formatUptime(health.uptime)} />
-                  <StatusRow label="API Endpoint" value="/api" mono />
-                  <StatusRow label="WebSocket" value="ws://localhost:4000" mono />
-                </div>
-              ) : (
-                <div className="p-4 flex items-center gap-2 text-error text-[13px]">
-                  <span className="material-symbols-outlined text-[16px]">error</span>
-                  Unable to reach API server
-                </div>
-              )}
+            <h3 className="text-section-title mb-4">Privacy and payments</h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              <InfoCard
+                icon="account_balance"
+                crossed
+                title="No bank connection"
+                body="CashFlow records shared expenses and balances. It does not connect to your bank account or move money for you."
+              />
+              <InfoCard
+                icon="group"
+                title="Group-based records"
+                body="Expenses, balances, and settlement plans stay organized inside the groups where they were created."
+              />
             </div>
           </section>
 
-          {/* Database */}
           <section>
-            <h3 className="text-section-title mb-4">Infrastructure</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="glass-panel-sm p-4 flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-glow-primary flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-primary text-[20px]">database</span>
+            <h3 className="text-section-title mb-4">How settling up works</h3>
+            <div className="rounded-2xl border border-outline-variant/70 bg-surface-container p-5 shadow-[0_8px_20px_rgba(31,35,54,0.04)]">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary/10 text-secondary">
+                  <span className="material-symbols-outlined text-[20px]">route</span>
                 </div>
                 <div>
-                  <p className="text-[13px] font-medium text-on-surface">PostgreSQL</p>
-                  <p className="text-[11px] text-on-surface-variant mt-0.5">Neon Serverless</p>
-                  <p className="text-[10px] text-secondary mt-1 font-medium">Connected</p>
-                </div>
-              </div>
-              <div className="glass-panel-sm p-4 flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-glow-error flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-tertiary text-[20px]">bolt</span>
-                </div>
-                <div>
-                  <p className="text-[13px] font-medium text-on-surface">Redis</p>
-                  <p className="text-[11px] text-on-surface-variant mt-0.5">Upstash (TLS)</p>
-                  <p className="text-[10px] text-secondary mt-1 font-medium">Connected</p>
+                  <p className="text-[13px] font-bold text-on-surface">CashFlow suggests; your group confirms</p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-on-surface-variant">CashFlow turns recorded balances into a shorter payment plan. A settlement payment stays pending until the receiving member confirms it.</p>
                 </div>
               </div>
             </div>
           </section>
 
-          {/* About */}
           <section>
             <h3 className="text-section-title mb-4">About</h3>
-            <div className="glass-panel-sm p-4">
-              <p className="text-[13px] text-on-surface leading-relaxed">
-                <strong>CashFlow</strong> is a public-beta group-expense tracker. It finds the minimum number of payments for groups with up to 12 non-zero balances, then uses a clearly labelled greedy fallback for larger groups.
-              </p>
-              <div className="flex gap-4 mt-3 pt-3 border-t border-glass-border">
-                <div>
-                  <span className="text-[10px] text-on-surface-variant uppercase font-medium">Algorithm</span>
-                  <p className="text-[12px] text-on-surface font-medium mt-0.5">Exact solver + C++ → WASM runtime</p>
-                </div>
-                <div>
-                  <span className="text-[10px] text-on-surface-variant uppercase font-medium">Real-Time</span>
-                  <p className="text-[12px] text-on-surface font-medium mt-0.5">Socket.io + Redis Pub/Sub</p>
-                </div>
-                <div>
-                  <span className="text-[10px] text-on-surface-variant uppercase font-medium">License</span>
-                  <p className="text-[12px] text-on-surface font-medium mt-0.5">MIT</p>
-                </div>
-              </div>
+            <div className="rounded-2xl border border-outline-variant/70 bg-surface-container p-5 shadow-[0_8px_20px_rgba(31,35,54,0.04)]">
+              <p className="text-[13px] leading-relaxed text-on-surface"><strong>CashFlow</strong> is an open-source group-expense tracker for trips, homes, and teams. It keeps the record understandable and gives the group a practical way to settle up.</p>
             </div>
           </section>
         </div>
@@ -133,24 +76,29 @@ export function SettingsPage() {
   );
 }
 
-function StatusRow({ label, value, badge, mono }: { label: string; value: string; badge?: string; mono?: boolean }) {
+function ThemeButton({ active, icon, label, onClick }: { active: boolean; icon: string; label: string; onClick: () => void }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3">
-      <span className="text-[13px] text-on-surface-variant">{label}</span>
-      <div className="flex items-center gap-2">
-        <span className={`text-[13px] font-medium text-on-surface ${mono ? "font-mono text-[12px]" : ""}`}>{value}</span>
-        {badge === "online" && (
-          <span className="flex h-2 w-2 rounded-full bg-secondary" />
-        )}
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-[11px] font-bold transition-all sm:flex-none ${active ? "bg-surface-container text-on-surface shadow-sm" : "text-on-surface-variant hover:text-on-surface"}`}
+    >
+      <span className="material-symbols-outlined text-[15px]">{icon}</span>
+      {label}
+    </button>
   );
 }
 
-function formatUptime(seconds: number): string {
-  if (!seconds) return "N/A";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+function InfoCard({ icon, title, body, crossed = false }: { icon: string; title: string; body: string; crossed?: boolean }) {
+  return (
+    <div className="rounded-2xl border border-outline-variant/70 bg-surface-container p-5 shadow-[0_8px_20px_rgba(31,35,54,0.04)]">
+      <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <span className="material-symbols-outlined text-[20px]">{icon}</span>
+        {crossed && <span className="absolute h-[2px] w-7 rotate-45 rounded-full bg-primary ring-2 ring-surface-container" aria-hidden="true" />}
+      </div>
+      <p className="mt-4 text-[13px] font-bold text-on-surface">{title}</p>
+      <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant">{body}</p>
+    </div>
+  );
 }

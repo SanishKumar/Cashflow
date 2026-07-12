@@ -34,6 +34,7 @@ router.get(
       totalTransactions,
       volumeResult,
       pendingSettlementsCount,
+      pendingSettlementRows,
       recentActivity,
       monthlyVolume,
       netPosition,
@@ -60,6 +61,19 @@ router.get(
         },
       }),
 
+      // A small routing summary lets the dashboard take users directly to
+      // each group that has settlement payments waiting for confirmation.
+      prisma.transaction.findMany({
+        where: {
+          groupId: { in: groupIds },
+          status: "PENDING",
+        },
+        select: {
+          groupId: true,
+          group: { select: { id: true, name: true } },
+        },
+      }),
+
       // Recent activity (last 10 audit log entries)
       prisma.auditLog.findMany({
         where: { userId },
@@ -78,6 +92,23 @@ router.get(
       calculateNetPosition(userId, groupIds),
     ]);
 
+    const pendingGroupMap = new Map<string, { groupId: string; groupName: string; pendingCount: number }>();
+    for (const row of pendingSettlementRows) {
+      const existing = pendingGroupMap.get(row.groupId);
+      if (existing) {
+        existing.pendingCount += 1;
+      } else {
+        pendingGroupMap.set(row.groupId, {
+          groupId: row.group.id,
+          groupName: row.group.name,
+          pendingCount: 1,
+        });
+      }
+    }
+    const pendingGroups = [...pendingGroupMap.values()].sort(
+      (a, b) => b.pendingCount - a.pendingCount || a.groupName.localeCompare(b.groupName)
+    );
+
     res.json({
       success: true,
       data: {
@@ -85,6 +116,7 @@ router.get(
         totalTransactions,
         totalVolume: volumeResult._sum.amount ?? 0,
         pendingSettlements: pendingSettlementsCount,
+        pendingGroups,
         netPosition,
         recentActivity,
         monthlyVolume,

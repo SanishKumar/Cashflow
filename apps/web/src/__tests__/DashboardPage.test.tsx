@@ -1,13 +1,16 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { DashboardPage } from "../pages/DashboardPage";
-import { dashboardApi } from "../lib/api";
+import { dashboardApi, groupApi } from "../lib/api";
 import { BrowserRouter } from "react-router-dom";
 import type { DashboardStats } from "../types";
 
 vi.mock("../lib/api", () => ({
   dashboardApi: {
     getStats: vi.fn(),
+  },
+  groupApi: {
+    list: vi.fn(),
   },
 }));
 
@@ -16,6 +19,9 @@ const mockStats: DashboardStats = {
   totalTransactions: 42,
   netPosition: 1250.5,
   pendingSettlements: 3,
+  pendingGroups: [
+    { groupId: "group-1", groupName: "Trip", pendingCount: 3 },
+  ],
   monthlyVolume: [
     { month: "2026-01", volume: 100 },
     { month: "2026-02", volume: 200 },
@@ -46,16 +52,16 @@ function renderWithRouter(ui: React.ReactElement) {
 describe("DashboardPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(groupApi.list).mockResolvedValue([]);
   });
 
   it("shows loading state initially", () => {
     // Return an unresolved promise to keep it in loading state
     vi.mocked(dashboardApi.getStats).mockImplementation(() => new Promise(() => {}));
     
-    renderWithRouter(<DashboardPage />);
-    
-    // The loading skeleton header text is present
-    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    const { container } = renderWithRouter(<DashboardPage />);
+
+    expect(container.querySelector(".animate-pulse")).toBeInTheDocument();
   });
 
   it("shows error state on API failure", async () => {
@@ -64,7 +70,7 @@ describe("DashboardPage", () => {
     renderWithRouter(<DashboardPage />);
     
     await waitFor(() => {
-      expect(screen.getByText("Unable to load dashboard")).toBeInTheDocument();
+      expect(screen.getByText("Your overview is unavailable")).toBeInTheDocument();
       // The useApi hook might display error.message or standard error string
     });
   });
@@ -89,10 +95,24 @@ describe("DashboardPage", () => {
     renderWithRouter(<DashboardPage />);
     
     await waitFor(() => {
-      expect(screen.getByText("Recent Activity")).toBeInTheDocument();
+      expect(screen.getByText("Recent activity")).toBeInTheDocument();
       expect(screen.getByText("Alice")).toBeInTheDocument();
       expect(screen.getByText("Added dinner expense")).toBeInTheDocument();
-      expect(screen.getByText("Trip")).toBeInTheDocument(); // Group name badge
+      expect(screen.getAllByText("Trip").length).toBeGreaterThan(0);
+      expect(screen.getByRole("link", { name: "All activity" })).toHaveAttribute("href", "/ledger?tab=activity");
+    });
+  });
+
+  it("links pending settlement payments to the affected group", async () => {
+    vi.mocked(dashboardApi.getStats).mockResolvedValue(mockStats);
+
+    renderWithRouter(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /3 pending payments/i })).toHaveAttribute(
+        "href",
+        "/groups/group-1?status=pending"
+      );
     });
   });
 
@@ -115,7 +135,7 @@ describe("DashboardPage", () => {
     renderWithRouter(<DashboardPage />);
     
     await waitFor(() => {
-      expect(screen.getByText("Transaction Volume")).toBeInTheDocument();
+      expect(screen.getByText("Shared spending")).toBeInTheDocument();
       expect(screen.getByText("$1,200")).toBeInTheDocument(); // Total volume
     });
   });

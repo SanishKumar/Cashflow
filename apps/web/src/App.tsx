@@ -3,6 +3,7 @@ import { lazy, Suspense } from "react";
 import { Layout } from "./components/Layout";
 import { DashboardPage } from "./pages/DashboardPage";
 import { UserProvider, useUser } from "./contexts/UserContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
 
 // Keep the dashboard in the first bundle for the fastest authenticated landing
 // page. Less frequently visited routes load only when a user navigates to them.
@@ -31,7 +32,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <div className="h-[100dvh] w-full bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-container to-[#4f46e5] flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-container to-[#5133db] flex items-center justify-center">
             <span className="material-symbols-outlined text-white text-[24px] animate-spin">sync</span>
           </div>
           <p className="text-[13px] text-on-surface-variant font-medium">Loading session...</p>
@@ -49,29 +50,31 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <UserProvider>
-        <Suspense fallback={<RouteLoading />}>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route
-              element={
-                <AuthGuard>
-                  <Layout />
-                </AuthGuard>
-              }
-            >
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/groups" element={<GroupsPage />} />
-              <Route path="/groups/:id" element={<GroupDetailPage />} />
-              <Route path="/ledger" element={<LedgerPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </UserProvider>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <UserProvider>
+          <Suspense fallback={<RouteLoading />}>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route
+                element={
+                  <AuthGuard>
+                    <Layout />
+                  </AuthGuard>
+                }
+              >
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/groups" element={<GroupsPage />} />
+                <Route path="/groups/:id" element={<GroupDetailPage />} />
+                <Route path="/ledger" element={<LedgerPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </UserProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }
 

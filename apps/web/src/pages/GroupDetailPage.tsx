@@ -4,7 +4,7 @@
 // ──────────────────────────────────────────────
 
 import { lazy, Suspense, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSocket } from "../hooks/useSocket";
 import { groupApi, transactionApi, settlementApi, exportApi } from "../lib/api";
@@ -36,6 +36,7 @@ function formatCurrency(amount: number, currencyCode: string = "USD"): string {
 
 export function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState<ViewMode>("ledger");
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showSettleModal, setShowSettleModal] = useState(false);
@@ -65,6 +66,16 @@ export function GroupDetailPage() {
 
   const currentSettlements = liveSettlements ?? balances?.settlements ?? [];
   const currentBalances = balances?.balances ?? [];
+  const pendingOnly = searchParams.get("status") === "pending";
+  const visibleTransactions = pendingOnly
+    ? (transactions ?? []).filter((transaction) => transaction.status === "PENDING")
+    : (transactions ?? []);
+
+  const clearPendingFilter = () => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("status");
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const handleMutationDone = () => {
     setShowExpenseModal(false);
@@ -101,7 +112,7 @@ export function GroupDetailPage() {
           <span className="material-symbols-outlined text-error text-[32px]">error</span>
         </div>
         <p className="text-[14px] font-medium text-on-surface">{groupError || "Group not found"}</p>
-        <Link to="/" className="btn-secondary">
+        <Link to="/groups" className="btn-secondary">
           <span className="material-symbols-outlined text-[16px]">arrow_back</span>
           Back to Groups
         </Link>
@@ -112,21 +123,21 @@ export function GroupDetailPage() {
   const totalOwed = currentBalances.filter((b) => b.netBalance > 0).reduce((sum, b) => sum + b.netBalance, 0);
 
   return (
-    <div className="mobile-scroll-safe h-full flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
+    <div className="mobile-scroll-safe h-full flex flex-col bg-background md:flex-row overflow-y-auto md:overflow-hidden">
       {/* ── Center Panel ──────────────────── */}
-      <section className="shrink-0 md:flex-1 md:h-full flex flex-col border-r border-outline-variant/30 overflow-hidden min-w-0">
+      <section className="shrink-0 md:flex-1 md:h-full flex flex-col border-r border-outline-variant/70 overflow-hidden min-w-0">
         {/* Header */}
-        <header className="h-12 md:h-14 border-b border-outline-variant/30 flex items-center px-4 md:px-5 justify-end md:justify-between bg-surface-container/50 shrink-0">
-          <div className="hidden md:flex items-center gap-3">
-            <Link to="/" className="btn-ghost !p-1.5 !h-auto">
+        <header className="h-auto min-h-14 border-b border-outline-variant/70 flex flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-6 md:py-4 bg-surface-container shrink-0">
+          <div className="flex items-center gap-3">
+            <Link to="/groups" className="btn-ghost !p-1.5 !h-auto">
               <span className="material-symbols-outlined text-[18px]">arrow_back</span>
             </Link>
             <div>
               <h2 className="text-[14px] font-semibold text-on-surface">{group.name}</h2>
-              <p className="text-[11px] text-on-surface-variant">{group.members.length} members • {transactions?.length ?? 0} transactions</p>
+              <p className="text-[11px] text-on-surface-variant">{group.members.length} members • {transactions?.length ?? 0} expenses</p>
             </div>
           </div>
-          <div className="flex items-center max-w-full">
+          <div className="flex max-w-full flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5 overflow-x-auto whitespace-nowrap">
             <button
               onClick={() => setViewMode("ledger")}
@@ -146,7 +157,7 @@ export function GroupDetailPage() {
                   : "text-on-surface-variant hover:text-on-surface"
               }`}
             >
-              Graph
+              Debt map
             </button>
             <button
               onClick={() => setViewMode("settings")}
@@ -159,16 +170,23 @@ export function GroupDetailPage() {
               Settings
             </button>
             </div>
+            {pendingOnly && viewMode === "ledger" && (
+              <button onClick={clearPendingFilter} className="flex h-7 items-center gap-1 rounded-full bg-warning/10 px-2.5 text-[10px] font-bold text-warning transition-colors hover:bg-warning/20" title="Show all transactions">
+                Pending only
+                <span className="material-symbols-outlined text-[14px]">close</span>
+              </button>
+            )}
           </div>
         </header>
 
         {viewMode === "ledger" ? (
           <LedgerView 
-            transactions={transactions ?? []} 
+            transactions={visibleTransactions}
             loading={txLoading} 
             currentUserId={currentUserId}
             currency={group.currency}
             onUpdateStatus={handleUpdateStatus}
+            pendingOnly={pendingOnly}
           />
         ) : viewMode === "graph" ? (
           <Suspense
@@ -186,12 +204,12 @@ export function GroupDetailPage() {
         ) : (
           <div className="flex-1 overflow-y-auto p-4 md:p-6 max-w-3xl mx-auto w-full space-y-8 animate-fade-in">
             <section>
-              <h3 className="text-[16px] font-bold text-on-surface mb-4">Member Roles</h3>
+              <h3 className="text-[16px] font-bold text-on-surface mb-4">Member access</h3>
               <RoleManager group={group} currentUserId={currentUserId} onRoleChanged={refetchGroup} />
             </section>
             
             <section>
-              <h3 className="text-[16px] font-bold text-on-surface mb-4">Activity Log</h3>
+              <h3 className="text-[16px] font-bold text-on-surface mb-4">Group activity</h3>
               <AuditLogViewer groupId={group.id} />
             </section>
           </div>
@@ -199,9 +217,9 @@ export function GroupDetailPage() {
       </section>
 
       {/* ── Right Panel ───────────────────── */}
-      <aside className="w-full md:w-[320px] bg-surface-container/30 flex flex-col md:h-full overflow-y-auto shrink-0 border-t md:border-t-0 border-outline-variant/30">
+      <aside className="w-full md:w-[336px] bg-surface-container-low flex flex-col md:h-full overflow-y-auto shrink-0 border-t md:border-t-0 border-outline-variant/70">
         {/* Actions */}
-        <div className="hidden md:flex p-5 flex-col gap-3 border-b border-outline-variant/30">
+        <div className="hidden md:flex p-5 flex-col gap-3 border-b border-outline-variant/70">
           <button onClick={() => setShowExpenseModal(true)} className="btn-primary w-full">
             <span className="material-symbols-outlined text-[16px]">add</span>
             Add Expense
@@ -225,23 +243,16 @@ export function GroupDetailPage() {
         {/* Balances */}
         <div className="p-4 md:p-5 flex-1 flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-section-title">Balances</h3>
+            <h3 className="text-[13px] font-bold text-on-surface">Open balances</h3>
           </div>
 
           {/* Summary Card */}
-          <div className="glass-panel-sm p-4 flex flex-col gap-1">
-            <span className="text-label text-[10px]">Total in Circulation</span>
+          <div className="rounded-2xl border border-outline-variant/70 bg-surface-container p-4 shadow-[0_8px_20px_rgba(31,35,54,0.04)] flex flex-col gap-1">
+            <span className="text-label text-[10px]">Group total</span>
             <span className="text-data-lg text-secondary">{formatCurrency(totalOwed)}</span>
             <span className="text-[11px] text-on-surface-variant mt-1">
               {currentSettlements.length} settlement{currentSettlements.length !== 1 ? "s" : ""} needed
             </span>
-            {balances?.solver && (
-              <span className="text-[10px] text-on-surface-variant mt-1">
-                {balances.solver.exact
-                  ? `Exact minimum · ${balances.solver.activeBalances} active balances`
-                  : `Greedy fallback · ${balances.solver.activeBalances} active balances`}
-              </span>
-            )}
           </div>
 
           {/* Individual */}
@@ -276,7 +287,7 @@ export function GroupDetailPage() {
           {currentSettlements.length > 0 && (
             <>
               <div className="h-px bg-outline-variant/30 my-1" />
-              <h3 className="text-section-title">Optimal Settlements</h3>
+              <h3 className="text-[13px] font-bold text-on-surface">Suggested settlements</h3>
               <div className="flex flex-col gap-2">
                 {currentSettlements.map((s, i) => (
                   <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-surface-dim text-[12px]">
@@ -315,9 +326,9 @@ export function GroupDetailPage() {
               {connected && <span className="animate-sync-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />}
               <span className={`relative inline-flex h-2 w-2 rounded-full ${connected ? "bg-secondary" : "bg-outline"}`} />
             </span>
-            <span className="text-[11px] text-on-surface-variant font-medium">{connected ? "Live" : "Offline"}</span>
+            <span className="text-[11px] text-on-surface-variant font-medium">{connected ? "Updates live" : "Reconnecting"}</span>
           </div>
-          <span className="text-[11px] text-on-surface-variant font-mono">{latency}ms</span>
+          {connected && <span className="text-[10px] text-on-surface-variant tabular-nums">{latency}ms</span>}
         </div>
       </aside>
 
@@ -367,9 +378,10 @@ interface LedgerViewProps {
   currentUserId: string | null;
   currency: string;
   onUpdateStatus: (txId: string, status: "COMPLETED" | "REJECTED") => void;
+  pendingOnly: boolean;
 }
 
-function LedgerView({ transactions, loading, currentUserId, currency, onUpdateStatus }: LedgerViewProps) {
+function LedgerView({ transactions, loading, currentUserId, currency, onUpdateStatus, pendingOnly }: LedgerViewProps) {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -387,8 +399,8 @@ function LedgerView({ transactions, loading, currentUserId, currency, onUpdateSt
         <div className="w-16 h-16 rounded-2xl bg-surface-variant flex items-center justify-center">
           <span className="material-symbols-outlined text-outline text-[32px]">receipt_long</span>
         </div>
-        <p className="text-[14px] font-medium text-on-surface">No transactions yet</p>
-        <p className="text-[13px] text-on-surface-variant">Add your first expense to get started.</p>
+        <p className="text-[14px] font-medium text-on-surface">{pendingOnly ? "No pending payments" : "No transactions yet"}</p>
+        <p className="text-[13px] text-on-surface-variant">{pendingOnly ? "This group has no settlement payments waiting for confirmation." : "Add your first expense to get started."}</p>
       </div>
     );
   }

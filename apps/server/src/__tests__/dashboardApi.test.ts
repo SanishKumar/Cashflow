@@ -46,13 +46,20 @@ describe("Dashboard API", () => {
   describe("GET /api/dashboard/stats", () => {
     it("returns aggregated dashboard stats for the authenticated user", async () => {
       // Mock the Prisma queries called in the dashboard route
-      mockPrisma.groupMember.findMany.mockResolvedValue([ { groupId: "group-1" } ]);
+      mockPrisma.groupMember.findMany.mockResolvedValue([
+        { groupId: "group-1" },
+        { groupId: "group-2" },
+      ]);
       mockPrisma.group.count.mockResolvedValue(5);
-      mockPrisma.transaction.count.mockResolvedValue(42);
+      mockPrisma.transaction.count
+        .mockResolvedValueOnce(42)
+        .mockResolvedValueOnce(3);
       
       // Net position mocked to be 1500
       mockPrisma.transaction.findMany.mockResolvedValue([
-        { amount: 2000, paidById: "user-1", createdAt: new Date() },
+        { groupId: "group-1", group: { id: "group-1", name: "Trip" } },
+        { groupId: "group-1", group: { id: "group-1", name: "Trip" } },
+        { groupId: "group-2", group: { id: "group-2", name: "Home" } },
       ]);
       
       mockPrisma.settlement.count.mockResolvedValue(3);
@@ -87,9 +94,13 @@ describe("Dashboard API", () => {
         .set("Authorization", "Bearer valid-mock-token");
 
       expect(response.status).toBe(200);
-      expect(response.body.data).toHaveProperty("totalGroups", 1);
+      expect(response.body.data).toHaveProperty("totalGroups", 2);
       expect(response.body.data).toHaveProperty("totalTransactions", 42);
-      expect(response.body.data).toHaveProperty("pendingSettlements", 42);
+      expect(response.body.data).toHaveProperty("pendingSettlements", 3);
+      expect(response.body.data.pendingGroups).toEqual([
+        { groupId: "group-1", groupName: "Trip", pendingCount: 2 },
+        { groupId: "group-2", groupName: "Home", pendingCount: 1 },
+      ]);
       expect(response.body.data).toHaveProperty("recentActivity");
       expect(response.body.data.recentActivity).toHaveLength(1);
       expect(response.body.data.monthlyVolume).toBeDefined();
