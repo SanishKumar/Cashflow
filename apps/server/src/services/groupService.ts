@@ -83,7 +83,11 @@ export class GroupService {
   /**
    * Get a single group by ID with full details.
    */
-  async findById(id: string) {
+  async findById(id: string, requestingUserId?: string) {
+    if (requestingUserId) {
+      await this.requireRole(id, requestingUserId, ["ADMIN", "MEMBER", "AUDITOR"]);
+    }
+
     const group = await prisma.group.findUnique({
       where: { id },
       include: GROUP_INCLUDE,

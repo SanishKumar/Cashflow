@@ -8,17 +8,41 @@ import type {
   DebtEdge,
   UserBalance,
   GroupBalances,
+  TransactionWithShares,
 } from "../types/api.js";
 import { NotFoundError, AppError } from "../middleware/errorHandler.js";
 import { solveDebts } from "../wasm/wasmLoader.js";
 import { broadcastToGroup } from "../socket/socketServer.js";
+import { groupService } from "./groupService.js";
+
+interface DecimalValue {
+  toNumber(): number;
+}
+
+function toApiTransaction<T extends {
+  amount: DecimalValue;
+  exchangeRate: DecimalValue | null;
+  debtShares: Array<{ amount: DecimalValue }>;
+}>(transaction: T): TransactionWithShares {
+  return {
+    ...transaction,
+    amount: transaction.amount.toNumber(),
+    exchangeRate: transaction.exchangeRate?.toNumber() ?? null,
+    debtShares: transaction.debtShares.map((share) => ({
+      ...share,
+      amount: share.amount.toNumber(),
+    })),
+  } as unknown as TransactionWithShares;
+}
 
 export class TransactionService {
   /**
    * Create a new transaction with debt shares.
    * Validates that the payer and all debtors are members of the group.
    */
-  async create(groupId: string, data: CreateTransactionInput) {
+  async create(groupId: string, data: CreateTransactionInput, requestingUserId: string) {
+    await groupService.requireRole(groupId, requestingUserId, ["ADMIN", "MEMBER"]);
+
     // Validate group exists
     const group = await prisma.group.findUnique({
       where: { id: groupId },
@@ -80,7 +104,7 @@ export class TransactionService {
         amount: finalAmount,
         originalCurrency,
         exchangeRate,
-        status: (data.status as any) ?? "COMPLETED",
+        status: "COMPLETED",
         description: data.description,
         debtShares: {
           create: finalShares.map((share) => ({
@@ -98,12 +122,13 @@ export class TransactionService {
         },
       },
     });
+    const apiTransaction = toApiTransaction(transaction);
 
     // Broadcast real-time update to all group members
     try {
       const settlements = await this.getSettlements(groupId);
       broadcastToGroup(groupId, "transaction:created", {
-        transaction,
+        transaction: apiTransaction,
         settlements: settlements.settlements,
       });
     } catch {
@@ -111,20 +136,27 @@ export class TransactionService {
       console.warn(`[WS] Failed to broadcast transaction:created for group ${groupId}`);
     }
 
-    return transaction;
+    return apiTransaction;
   }
 
   /**
    * Get all transactions for a group with full details.
    */
-  async findByGroup(groupId: string, page: number = 1, limit: number = 50) {
+  async findByGroup(
+    groupId: string,
+    requestingUserId: string,
+    page: number = 1,
+    limit: number = 50
+  ) {
+    await groupService.requireRole(groupId, requestingUserId, ["ADMIN", "MEMBER", "AUDITOR"]);
+
     // Validate group exists
     const group = await prisma.group.findUnique({ where: { id: groupId } });
     if (!group) {
       throw new NotFoundError("Group", groupId);
     }
 
-    return prisma.transaction.findMany({
+    const transactions = await prisma.transaction.findMany({
       where: { groupId },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
@@ -138,12 +170,15 @@ export class TransactionService {
         },
       },
     });
+    return transactions.map(toApiTransaction);
   }
 
   /**
    * Get a single transaction by ID.
    */
-  async findById(groupId: string, transactionId: string) {
+  async findById(groupId: string, transactionId: string, requestingUserId: string) {
+    await groupService.requireRole(groupId, requestingUserId, ["ADMIN", "MEMBER", "AUDITOR"]);
+
     const transaction = await prisma.transaction.findFirst({
       where: { id: transactionId, groupId },
       include: {
@@ -160,44 +195,15 @@ export class TransactionService {
       throw new NotFoundError("Transaction", transactionId);
     }
 
-    return transaction;
-  }
-
-  /**
-   * Update transaction status (for settlements).
-   */
-  async updateStatus(groupId: string, transactionId: string, status: string) {
-    await this.findById(groupId, transactionId);
-
-    const updated = await prisma.transaction.update({
-      where: { id: transactionId },
-      data: { status: status as any },
-      include: {
-        paidBy: { select: { id: true, name: true, email: true } },
-        debtShares: {
-          include: {
-            owedBy: { select: { id: true, name: true, email: true } },
-          },
-        },
-      },
-    });
-
-    // Broadcast updated settlements if status changed to COMPLETED or REJECTED
-    try {
-      const settlements = await this.getSettlements(groupId);
-      broadcastToGroup(groupId, "settlements:updated", settlements.settlements);
-    } catch {
-      console.warn(`[WS] Failed to broadcast settlements:updated for group ${groupId}`);
-    }
-
-    return updated;
+    return toApiTransaction(transaction);
   }
 
   /**
    * Delete a transaction.
    */
-  async delete(groupId: string, transactionId: string) {
-    await this.findById(groupId, transactionId);
+  async delete(groupId: string, transactionId: string, requestingUserId: string) {
+    await groupService.requireRole(groupId, requestingUserId, "ADMIN");
+    await this.findById(groupId, transactionId, requestingUserId);
     const result = await prisma.transaction.delete({ where: { id: transactionId } });
 
     // Broadcast updated settlements after deletion
@@ -211,15 +217,12 @@ export class TransactionService {
     return result;
   }
 
-  /**
-   * Compute minimized settlements for a group.
-   *
-   * 1. Fetch all transactions and debt shares from the DB.
-   * 2. Build a list of directed debt edges.
-   * 3. Run the exact or greedy settlement solver, depending on active balances.
-   * 4. Return balances + minimized settlements.
-   */
-  async getSettlements(groupId: string): Promise<GroupBalances> {
+  /** Compute a suggested settlement plan from expenses and confirmed payments. */
+  async getSettlements(groupId: string, requestingUserId?: string): Promise<GroupBalances> {
+    if (requestingUserId) {
+      await groupService.requireRole(groupId, requestingUserId, ["ADMIN", "MEMBER", "AUDITOR"]);
+    }
+
     const group = await prisma.group.findUnique({
       where: { id: groupId },
       include: {
@@ -233,16 +236,21 @@ export class TransactionService {
       throw new NotFoundError("Group", groupId);
     }
 
-    // Fetch all completed transactions with shares
-    const transactions = await prisma.transaction.findMany({
-      where: { groupId, status: "COMPLETED" as any },
-      include: {
-        paidBy: { select: { id: true, name: true } },
-        debtShares: {
-          include: { owedBy: { select: { id: true, name: true } } },
+    const [transactions, confirmedPayments] = await Promise.all([
+      prisma.transaction.findMany({
+        where: { groupId, status: "COMPLETED" },
+        include: {
+          paidBy: { select: { id: true, name: true } },
+          debtShares: {
+            include: { owedBy: { select: { id: true, name: true } } },
+          },
         },
-      },
-    });
+      }),
+      prisma.settlementPayment.findMany({
+        where: { groupId, status: "CONFIRMED" },
+        select: { fromUserId: true, toUserId: true, amount: true },
+      }),
+    ]);
 
     // Build user name map
     const userNames = new Map<string, string>();
@@ -262,10 +270,20 @@ export class TransactionService {
           edges.push({
             from: share.owedById,
             to: tx.paidById,
-            amount: share.amount,
+            amount: share.amount.toNumber(),
           });
         }
       }
+    }
+
+    // A confirmed payment offsets the original obligation. If A owed B and A
+    // paid B, add the reverse edge B -> A for the confirmed amount.
+    for (const payment of confirmedPayments) {
+      edges.push({
+        from: payment.toUserId,
+        to: payment.fromUserId,
+        amount: payment.amount.toNumber(),
+      });
     }
 
     // Run the solver

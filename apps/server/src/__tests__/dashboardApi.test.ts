@@ -11,7 +11,7 @@ const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
     group: { count: vi.fn() },
     transaction: { count: vi.fn(), findMany: vi.fn(), aggregate: vi.fn() },
-    settlement: { count: vi.fn() },
+    settlementPayment: { count: vi.fn(), findMany: vi.fn(), aggregate: vi.fn() },
     auditLog: { findMany: vi.fn() },
     user: { findUnique: vi.fn() },
     groupMember: { findMany: vi.fn() },
@@ -47,36 +47,17 @@ describe("Dashboard API", () => {
     it("returns aggregated dashboard stats for the authenticated user", async () => {
       // Mock the Prisma queries called in the dashboard route
       mockPrisma.groupMember.findMany.mockResolvedValue([
-        { groupId: "group-1" },
-        { groupId: "group-2" },
+        { group: { id: "group-1", name: "Trip", description: null, currency: "EUR", _count: { members: 4, transactions: 30 } } },
+        { group: { id: "group-2", name: "Home", description: null, currency: "USD", _count: { members: 3, transactions: 12 } } },
       ]);
-      mockPrisma.group.count.mockResolvedValue(5);
-      mockPrisma.transaction.count
-        .mockResolvedValueOnce(42)
-        .mockResolvedValueOnce(3);
-      
-      // Net position mocked to be 1500
-      mockPrisma.transaction.findMany.mockResolvedValue([
-        { groupId: "group-1", group: { id: "group-1", name: "Trip" } },
-        { groupId: "group-1", group: { id: "group-1", name: "Trip" } },
-        { groupId: "group-2", group: { id: "group-2", name: "Home" } },
+      mockPrisma.settlementPayment.findMany.mockResolvedValue([
+        { id: "p1", groupId: "group-1", fromUserId: "user-2", toUserId: "user-1", amount: 10, currency: "EUR", createdAt: new Date(), group: { name: "Trip" }, fromUser: { name: "Bob" }, toUser: { name: "Alice" } },
+        { id: "p2", groupId: "group-1", fromUserId: "user-3", toUserId: "user-1", amount: 15, currency: "EUR", createdAt: new Date(), group: { name: "Trip" }, fromUser: { name: "Chris" }, toUser: { name: "Alice" } },
+        { id: "p3", groupId: "group-2", fromUserId: "user-4", toUserId: "user-1", amount: 20, currency: "USD", createdAt: new Date(), group: { name: "Home" }, fromUser: { name: "Dana" }, toUser: { name: "Alice" } },
       ]);
-      
-      mockPrisma.settlement.count.mockResolvedValue(3);
-      
-      // Total volume and net paid aggregation mocks
-      mockPrisma.transaction.aggregate.mockResolvedValue({
-        _sum: { amount: 1200 },
-      });
-
-      // Monthly volume is aggregated in PostgreSQL.
       mockPrisma.$queryRaw.mockResolvedValue([
-        { month: "2026-07", volume: 1200 },
+        { groupId: "group-1", fromUserId: "user-1", fromName: "Alice", toUserId: "user-2", toName: "Bob", amount: 42.5 },
       ]);
-      
-      mockPrisma.debtShare.aggregate.mockResolvedValue({
-        _sum: { amount: 500 },
-      });
       
       mockPrisma.auditLog.findMany.mockResolvedValue([
         {
@@ -104,7 +85,14 @@ describe("Dashboard API", () => {
       expect(response.body.data).toHaveProperty("recentActivity");
       expect(response.body.data.recentActivity).toHaveLength(1);
       expect(response.body.data.monthlyVolume).toBeDefined();
-      expect(response.body.data.totalVolume).toBe(1200);
+      expect(response.body.data.totalVolume).toBeUndefined();
+      expect(response.body.data.groups).toHaveLength(2);
+      expect(response.body.data.outgoingSettlements[0]).toMatchObject({
+        groupId: "group-1",
+        currency: "EUR",
+        toName: "Bob",
+        amount: 42.5,
+      });
     });
 
     it("returns 401 if unauthorized", async () => {

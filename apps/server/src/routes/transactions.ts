@@ -8,7 +8,6 @@ import { auditLogService } from "../services/auditLogService.js";
 import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
-import { z } from "zod";
 import { CreateTransactionSchema } from "../types/api.js";
 
 const router = Router();
@@ -21,7 +20,11 @@ router.post(
   "/:groupId/transactions",
   validate(CreateTransactionSchema),
   asyncHandler(async (req, res) => {
-    const transaction = await transactionService.create(req.params.groupId as string, req.body);
+    const transaction = await transactionService.create(
+      req.params.groupId as string,
+      req.body,
+      req.userId!
+    );
 
     // Audit log
     await auditLogService.log({
@@ -44,6 +47,7 @@ router.get(
 
     const transactions = await transactionService.findByGroup(
       req.params.groupId as string,
+      req.userId!,
       page,
       limit
     );
@@ -57,7 +61,8 @@ router.get(
   asyncHandler(async (req, res) => {
     const transaction = await transactionService.findById(
       req.params.groupId as string,
-      req.params.id as string
+      req.params.id as string,
+      req.userId!
     );
     res.json({ success: true, data: transaction });
   })
@@ -67,7 +72,11 @@ router.get(
 router.delete(
   "/:groupId/transactions/:id",
   asyncHandler(async (req, res) => {
-    await transactionService.delete(req.params.groupId as string, req.params.id as string);
+    await transactionService.delete(
+      req.params.groupId as string,
+      req.params.id as string,
+      req.userId!
+    );
 
     // Audit log
     await auditLogService.log({
@@ -82,33 +91,14 @@ router.delete(
 );
 
 // PATCH /api/groups/:groupId/transactions/:id/status — Update status
-router.patch(
-  "/:groupId/transactions/:id/status",
-  validate(z.object({ status: z.enum(["COMPLETED", "PENDING", "REJECTED"]) })),
-  asyncHandler(async (req, res) => {
-    const updated = await transactionService.updateStatus(
-      req.params.groupId as string,
-      req.params.id as string,
-      req.body.status
-    );
-
-    // Audit log
-    await auditLogService.log({
-      userId: req.userId!,
-      groupId: req.params.groupId as string,
-      action: `TRANSACTION_${req.body.status}`,
-      details: `Marked transaction as ${req.body.status.toLowerCase()}`,
-    });
-
-    res.json({ success: true, data: updated });
-  })
-);
-
 // GET /api/groups/:groupId/settlements — Compute minimized settlements
 router.get(
   "/:groupId/settlements",
   asyncHandler(async (req, res) => {
-    const settlements = await transactionService.getSettlements(req.params.groupId as string);
+    const settlements = await transactionService.getSettlements(
+      req.params.groupId as string,
+      req.userId!
+    );
     res.json({ success: true, data: settlements });
   })
 );

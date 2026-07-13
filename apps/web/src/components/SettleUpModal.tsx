@@ -1,173 +1,156 @@
-// ──────────────────────────────────────────────
-// Settle Up Modal — v2.1
-// Shows minimized settlement plan and allows
-// recording settlement payments.
-// ──────────────────────────────────────────────
-
 import { useState } from "react";
-import { transactionApi } from "../lib/api";
-import type { Group, Settlement } from "../types/index";
+import { settlementPaymentApi } from "../lib/api";
+import type { Group, Settlement, SettlementPayment } from "../types/index";
 
 interface SettleUpModalProps {
   group: Group;
   settlements: Settlement[];
+  pendingPayments: SettlementPayment[];
+  currentUserId: string | null;
   onClose: () => void;
-  onSettled: () => void;
+  onChanged: () => void;
 }
 
 function getInitials(name: string): string {
-  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+  return name.split(" ").map((part) => part[0]).join("").toUpperCase().slice(0, 2);
 }
 
-export function SettleUpModal({ group, settlements, onClose, onSettled }: SettleUpModalProps) {
-  const [settlingIndex, setSettlingIndex] = useState<number | null>(null);
-  const [settledIndices, setSettledIndices] = useState<Set<number>>(new Set());
+function formatCurrency(amount: number, currency: string) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+}
+
+export function SettleUpModal({
+  group,
+  settlements,
+  pendingPayments,
+  currentUserId,
+  onClose,
+  onChanged,
+}: SettleUpModalProps) {
+  const [sendingKey, setSendingKey] = useState<string | null>(null);
+  const [sentPairs, setSentPairs] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
-  const handleSettle = async (settlement: Settlement, index: number) => {
-    setSettlingIndex(index);
+  const isPending = (settlement: Settlement) =>
+    sentPairs.has(`${settlement.from}:${settlement.to}`)
+    || pendingPayments.some(
+      (payment) => payment.status === "PENDING"
+        && payment.fromUserId === settlement.from
+        && payment.toUserId === settlement.to
+    );
+
+  const markSent = async (settlement: Settlement) => {
+    const pairKey = `${settlement.from}:${settlement.to}`;
+    setSendingKey(pairKey);
     setError(null);
     try {
-      // Create a reverse transaction: the debtor pays the creditor
-      await transactionApi.create(group.id, {
-        paidById: settlement.from,
+      await settlementPaymentApi.create(group.id, {
+        toUserId: settlement.to,
         amount: settlement.amount,
-        description: `Settlement: ${settlement.fromName} → ${settlement.toName}`,
-        status: "PENDING",
-        shares: [{ owedById: settlement.to, amount: settlement.amount }],
       });
-      setSettledIndices((prev) => new Set(prev).add(index));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to record settlement");
+      setSentPairs((previous) => new Set(previous).add(pairKey));
+      onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to mark this payment as sent");
     } finally {
-      setSettlingIndex(null);
+      setSendingKey(null);
     }
   };
 
-  const allSettled = settledIndices.size === settlements.length && settlements.length > 0;
+  const mySettlements = settlements.filter((settlement) => settlement.from === currentUserId);
+  const sentCount = mySettlements.filter(isPending).length;
+  const allMineSent = mySettlements.length > 0 && sentCount === mySettlements.length;
 
   return (
-    <div className="mobile-sheet-overlay fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="mobile-sheet glass-panel w-full max-w-[600px] max-h-[80vh] flex flex-col overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
+    <div className="mobile-sheet-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div className="mobile-sheet glass-panel flex max-h-[84vh] w-full max-w-[620px] flex-col overflow-hidden animate-scale-in" onClick={(event) => event.stopPropagation()}>
         <div className="mobile-sheet-handle" />
-        {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-glass-border shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-secondary-container to-secondary flex items-center justify-center">
-              <span className="material-symbols-outlined text-white text-[18px]">handshake</span>
+        <div className="flex shrink-0 items-center justify-between border-b border-glass-border px-5 py-4 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <span className="material-symbols-outlined text-[20px]">route</span>
             </div>
-            <div>
-              <h2 className="text-[15px] font-semibold text-on-surface">Settle Up</h2>
-              <p className="text-[11px] text-on-surface-variant">
-                {settlements.length} settlement{settlements.length !== 1 ? "s" : ""}
-              </p>
+            <div className="min-w-0">
+              <h2 className="text-[15px] font-bold text-on-surface">Settlement plan</h2>
+              <p className="truncate text-[11px] text-on-surface-variant">{group.name} · {settlements.length} suggested payment{settlements.length === 1 ? "" : "s"}</p>
             </div>
           </div>
-          <button onClick={onClose} className="btn-ghost !p-1.5 !h-auto hover:bg-surface-variant rounded-full">
+          <button type="button" onClick={onClose} className="btn-ghost !h-auto rounded-full !p-1.5" aria-label="Close settlement plan">
             <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-6 py-5 flex flex-col gap-4 overflow-y-auto flex-1">
-          {error && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-glow-error border border-error/20 text-error text-[13px]">
-              <span className="material-symbols-outlined text-[16px]">error</span>
-              {error}
-            </div>
-          )}
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-5 sm:px-6">
+          <div className="rounded-2xl border border-outline-variant/70 bg-surface-container-high p-4">
+            <p className="text-[12px] font-bold text-on-surface">CashFlow records confirmation; it does not move money.</p>
+            <p className="mt-1 text-[11px] leading-5 text-on-surface-variant">Send the payment using your preferred method, then mark it sent here. The receiving member must confirm it before balances change.</p>
+          </div>
+
+          {error && <p className="rounded-xl border border-error/20 bg-error/10 p-3 text-[12px] font-medium text-error" role="alert">{error}</p>}
 
           {settlements.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-glow-secondary flex items-center justify-center">
-                <span className="material-symbols-outlined text-secondary text-[28px]">check_circle</span>
-              </div>
-              <p className="text-[14px] font-medium text-on-surface">All settled!</p>
-              <p className="text-[13px] text-on-surface-variant text-center">
-                Everyone in {group.name} is square. No payments needed.
-              </p>
+            <div className="flex flex-col items-center py-10 text-center">
+              <span className="material-symbols-outlined text-[34px] text-secondary">check_circle</span>
+              <p className="mt-2 text-[14px] font-bold">Everyone is settled</p>
+              <p className="mt-1 text-[12px] text-on-surface-variant">There are no open balances in this group.</p>
             </div>
           ) : (
-            <>
-              <p className="text-[13px] text-on-surface-variant">
-                These payments settle all outstanding balances:
-              </p>
-
-              {settlements.map((s, i) => {
-                const isSettled = settledIndices.has(i);
-                const isSettling = settlingIndex === i;
+            <div className="space-y-3">
+              {settlements.map((settlement, index) => {
+                const pairKey = `${settlement.from}:${settlement.to}`;
+                const canSend = settlement.from === currentUserId;
+                const pending = isPending(settlement);
+                const sending = sendingKey === pairKey;
 
                 return (
-                  <div
-                    key={i}
-                    className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 p-4 rounded-lg border transition-all ${
-                      isSettled
-                        ? "bg-glow-secondary border-secondary/20 opacity-70"
-                        : "bg-surface-dim border-outline-variant/30 hover:border-outline-variant"
-                    }`}
-                  >
-                    {/* From */}
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className={`avatar avatar-sm avatar-${i % 6}`}>
-                        {getInitials(s.fromName)}
+                  <article key={pairKey} className="rounded-2xl border border-outline-variant/70 bg-surface-container p-4">
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className={`avatar avatar-sm avatar-${index % 6}`}>{getInitials(settlement.fromName)}</div>
+                        <span className="truncate text-[12px] font-bold">{settlement.fromName}</span>
                       </div>
-                      <span className="text-[13px] font-medium text-on-surface truncate">{s.fromName}</span>
-                    </div>
-
-                    {/* Arrow + Amount */}
-                    <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 shrink-0 text-center">
-                      <span className="material-symbols-outlined text-on-surface-variant text-[16px]">arrow_forward</span>
-                      <span className="text-data font-bold text-secondary">${s.amount.toFixed(2)}</span>
-                      <span className="material-symbols-outlined text-on-surface-variant text-[16px]">arrow_forward</span>
-                    </div>
-
-                    {/* To */}
-                    <div className="flex items-center gap-2 flex-1 min-w-0 sm:justify-end">
-                      <span className="text-[13px] font-medium text-on-surface truncate">{s.toName}</span>
-                      <div className={`avatar avatar-sm avatar-${(i + 1) % 6}`}>
-                        {getInitials(s.toName)}
+                      <div className="text-center">
+                        <p className="text-[13px] font-bold tabular-nums text-primary">{formatCurrency(settlement.amount, group.currency)}</p>
+                        <span className="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_forward</span>
+                      </div>
+                      <div className="flex min-w-0 items-center justify-end gap-2">
+                        <span className="truncate text-[12px] font-bold">{settlement.toName}</span>
+                        <div className={`avatar avatar-sm avatar-${(index + 1) % 6}`}>{getInitials(settlement.toName)}</div>
                       </div>
                     </div>
 
-                    {/* Action */}
-                    <button
-                      onClick={() => handleSettle(s, i)}
-                      disabled={isSettled || isSettling}
-                      className={`shrink-0 w-full sm:w-auto min-h-11 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
-                        isSettled
-                          ? "bg-secondary/10 text-secondary border border-secondary/20 !cursor-default"
-                          : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white"
-                      }`}
-                    >
-                      {isSettled ? (
-                        <>
-                          <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                          Settled
-                        </>
-                      ) : isSettling ? (
-                        "Recording..."
+                    <div className="mt-3 border-t border-outline-variant/60 pt-3">
+                      {canSend ? (
+                        <button
+                          type="button"
+                          onClick={() => markSent(settlement)}
+                          disabled={pending || sending}
+                          aria-label={pending ? `Payment to ${settlement.toName} awaiting confirmation` : `Mark payment to ${settlement.toName} as sent`}
+                          className={`flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border px-3 text-[12px] font-bold transition-colors ${
+                            pending
+                              ? "cursor-default border-warning/20 bg-warning/10 text-warning"
+                              : "border-primary/25 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[16px]">{pending ? "hourglass_top" : "outgoing_mail"}</span>
+                          {pending ? "Sent · awaiting confirmation" : sending ? "Marking sent..." : "I sent this payment"}
+                        </button>
                       ) : (
-                        <>
-                          <span className="material-symbols-outlined text-[14px]">payments</span>
-                          Record Payment
-                        </>
+                        <p className="text-center text-[11px] text-on-surface-variant">Only {settlement.fromName} can mark this payment as sent.</p>
                       )}
-                    </button>
-                  </div>
+                    </div>
+                  </article>
                 );
               })}
-            </>
+            </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-4 md:px-6 py-4 border-t border-glass-border flex justify-between items-center shrink-0">
-          <div className="text-[12px] text-on-surface-variant">
-            {settledIndices.size}/{settlements.length} recorded
-          </div>
-          <button onClick={allSettled ? onSettled : onClose} className={allSettled ? "btn-primary" : "btn-secondary"}>
-            {allSettled ? "Done" : "Close"}
-          </button>
+        <div className="flex shrink-0 items-center justify-between border-t border-glass-border px-4 py-4 sm:px-6">
+          <p className="text-[11px] text-on-surface-variant">
+            {mySettlements.length === 0 ? "No payments assigned to you" : `${sentCount}/${mySettlements.length} of your payments marked sent`}
+          </p>
+          <button type="button" onClick={onClose} className={allMineSent ? "btn-primary" : "btn-secondary"}>{allMineSent ? "Done" : "Close"}</button>
         </div>
       </div>
     </div>

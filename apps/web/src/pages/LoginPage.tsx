@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useUser } from "../contexts/UserContext";
 import { BrandMark } from "../components/BrandMark";
 
@@ -57,19 +57,6 @@ export function LoginPage() {
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDemoLogin = async () => {
-    setSubmitting(true);
-    setError(null);
-    try {
-      await login("alex@cashflow.dev", "Password123");
-      navigate("/", { replace: true });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "The demo workspace is unavailable right now");
     } finally {
       setSubmitting(false);
     }
@@ -315,11 +302,11 @@ export function LoginPage() {
         )}
 
         <div className="w-full mt-6 pt-5 border-t border-outline-variant/50">
-          <button type="button" onClick={handleDemoLogin} disabled={submitting} className="btn-secondary h-11 w-full">
+          <Link to="/demo" className="btn-secondary h-11 w-full">
             <span className="material-symbols-outlined text-[17px]">explore</span>
             Explore the demo workspace
-          </button>
-          <p className="mt-2 text-center text-[10px] text-on-surface-variant">Uses shared sample data. No account needed.</p>
+          </Link>
+          <p className="mt-2 text-center text-[10px] text-on-surface-variant">Private sample data in this tab. No account needed.</p>
         </div>
       </div>
     </div>

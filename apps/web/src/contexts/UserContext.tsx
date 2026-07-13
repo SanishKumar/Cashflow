@@ -2,14 +2,14 @@
  * User Context — JWT-Aware Authentication State
  *
  * Manages the current user's authentication lifecycle:
- * - On mount: checks for stored refresh token and attempts to restore session
- * - login/register: stores tokens and user profile
+ * - On mount: checks a non-sensitive session marker and restores via HttpOnly cookie
+ * - login/register: stores the short-lived access token in memory
  * - logout: clears tokens and redirects to login
  * - Auto-refresh: handles transparent token rotation via the API client
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
-import { authApi, setAccessToken, setRefreshToken, getRefreshToken, clearAuth } from "../lib/api";
+import { authApi, setAccessToken, setSessionMarker, hasSessionMarker, clearAuth } from "../lib/api";
 
 interface User {
   id: string;
@@ -34,13 +34,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const restoreStarted = useRef(false);
 
-  // Restore session from refresh token on mount
+  // Restore the session from the HttpOnly refresh cookie when a session marker exists.
   useEffect(() => {
     if (restoreStarted.current) return;
     restoreStarted.current = true;
 
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) {
+    if (!hasSessionMarker()) {
       setLoading(false);
       return;
     }
@@ -64,14 +63,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const result = await authApi.login({ email, password });
     setAccessToken(result.accessToken);
-    setRefreshToken(result.refreshToken);
+    setSessionMarker(true);
     setCurrentUser(result.user);
   }, []);
 
   const register = useCallback(async (name: string, email: string, password: string) => {
     const result = await authApi.register({ name, email, password });
     setAccessToken(result.accessToken);
-    setRefreshToken(result.refreshToken);
+    setSessionMarker(true);
     setCurrentUser(result.user);
   }, []);
 

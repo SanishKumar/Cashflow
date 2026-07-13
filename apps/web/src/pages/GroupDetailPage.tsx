@@ -3,14 +3,15 @@
 // Ledger + Graph + Balances + Actions
 // ──────────────────────────────────────────────
 
-import { lazy, Suspense, useState, useCallback } from "react";
+import { lazy, Suspense, useState, useCallback, useEffect } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useSocket } from "../hooks/useSocket";
-import { groupApi, transactionApi, settlementApi, exportApi } from "../lib/api";
-import type { Group, Transaction, GroupBalances, Settlement } from "../types/index";
+import { groupApi, transactionApi, settlementApi, settlementPaymentApi, exportApi } from "../lib/api";
+import type { Group, Transaction, GroupBalances, Settlement, SettlementPayment } from "../types/index";
 import { ExpenseModal } from "../components/ExpenseModal";
 import { SettleUpModal } from "../components/SettleUpModal";
+import { SettlementPaymentsPanel } from "../components/SettlementPaymentsPanel";
 import { DeleteGroupModal } from "../components/DeleteGroupModal";
 import { RoleManager } from "../components/RoleManager";
 import { AuditLogViewer } from "../components/AuditLogViewer";
@@ -20,7 +21,7 @@ const DebtGraph = lazy(() =>
   import("../components/DebtGraph").then(({ DebtGraph }) => ({ default: DebtGraph }))
 );
 
-type ViewMode = "ledger" | "graph" | "settings";
+type ViewMode = "ledger" | "payments" | "graph" | "settings";
 
 function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -37,7 +38,7 @@ function formatCurrency(amount: number, currencyCode: string = "USD"): string {
 export function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [viewMode, setViewMode] = useState<ViewMode>("ledger");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => searchParams.get("status") === "pending" ? "payments" : "ledger");
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -45,9 +46,18 @@ export function GroupDetailPage() {
   const [liveSettlements, setLiveSettlements] = useState<Settlement[] | null>(null);
   const { currentUserId } = useUser();
 
+  useEffect(() => {
+    if (searchParams.get("settle") !== "1") return;
+    setShowSettleModal(true);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("settle");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const { data: group, loading: groupLoading, error: groupError, refetch: refetchGroup } = useApi<Group>(() => groupApi.get(id!), [id]);
   const { data: transactions, loading: txLoading, refetch: refetchTx } = useApi<Transaction[]>(() => transactionApi.list(id!), [id]);
   const { data: balances, refetch: refetchBalances } = useApi<GroupBalances>(() => settlementApi.get(id!), [id]);
+  const { data: settlementPayments, loading: paymentsLoading, refetch: refetchPayments } = useApi<SettlementPayment[]>(() => settlementPaymentApi.list(id!), [id]);
 
   // Determine the current user's role in this group
   const myMembership = group ? group.members.find(m => m.userId === currentUserId) : null;
@@ -56,10 +66,10 @@ export function GroupDetailPage() {
   const handleSettlementsUpdate = useCallback(
     (newSettlements: Settlement[]) => {
       setLiveSettlements(newSettlements);
-      refetchTx();
       refetchBalances();
+      refetchPayments();
     },
-    [refetchTx, refetchBalances]
+    [refetchBalances, refetchPayments]
   );
 
   const { connected, latency } = useSocket(id, handleSettlementsUpdate);
@@ -67,9 +77,6 @@ export function GroupDetailPage() {
   const currentSettlements = liveSettlements ?? balances?.settlements ?? [];
   const currentBalances = balances?.balances ?? [];
   const pendingOnly = searchParams.get("status") === "pending";
-  const visibleTransactions = pendingOnly
-    ? (transactions ?? []).filter((transaction) => transaction.status === "PENDING")
-    : (transactions ?? []);
 
   const clearPendingFilter = () => {
     const nextParams = new URLSearchParams(searchParams);
@@ -77,21 +84,17 @@ export function GroupDetailPage() {
     setSearchParams(nextParams, { replace: true });
   };
 
+  const refreshSettlementData = () => {
+    setLiveSettlements(null);
+    refetchBalances();
+    refetchPayments();
+  };
+
   const handleMutationDone = () => {
     setShowExpenseModal(false);
     setShowSettleModal(false);
     refetchTx();
-    refetchBalances();
-  };
-
-  const handleUpdateStatus = async (txId: string, status: "COMPLETED" | "REJECTED") => {
-    try {
-      await transactionApi.updateStatus(id!, txId, status);
-      refetchTx();
-      refetchBalances();
-    } catch (err) {
-      console.error("Failed to update status", err);
-    }
+    refreshSettlementData();
   };
 
   if (groupLoading) {
@@ -121,6 +124,8 @@ export function GroupDetailPage() {
   }
 
   const totalOwed = currentBalances.filter((b) => b.netBalance > 0).reduce((sum, b) => sum + b.netBalance, 0);
+  const pendingPayments = (settlementPayments ?? []).filter((payment) => payment.status === "PENDING");
+  const incomingPendingCount = pendingPayments.filter((payment) => payment.toUserId === currentUserId).length;
 
   return (
     <div className="mobile-scroll-safe h-full flex flex-col bg-background md:flex-row overflow-y-auto md:overflow-hidden">
@@ -150,6 +155,16 @@ export function GroupDetailPage() {
               Ledger
             </button>
             <button
+              onClick={() => setViewMode("payments")}
+              className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
+                viewMode === "payments"
+                  ? "bg-surface-container-high text-on-surface shadow-sm"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              Payments{incomingPendingCount > 0 ? ` (${incomingPendingCount})` : ""}
+            </button>
+            <button
               onClick={() => setViewMode("graph")}
               className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
                 viewMode === "graph"
@@ -170,8 +185,8 @@ export function GroupDetailPage() {
               Settings
             </button>
             </div>
-            {pendingOnly && viewMode === "ledger" && (
-              <button onClick={clearPendingFilter} className="flex h-7 items-center gap-1 rounded-full bg-warning/10 px-2.5 text-[10px] font-bold text-warning transition-colors hover:bg-warning/20" title="Show all transactions">
+            {pendingOnly && viewMode === "payments" && (
+              <button onClick={clearPendingFilter} className="flex h-7 items-center gap-1 rounded-full bg-warning/10 px-2.5 text-[10px] font-bold text-warning transition-colors hover:bg-warning/20" title="Show payment history">
                 Pending only
                 <span className="material-symbols-outlined text-[14px]">close</span>
               </button>
@@ -181,12 +196,18 @@ export function GroupDetailPage() {
 
         {viewMode === "ledger" ? (
           <LedgerView 
-            transactions={visibleTransactions}
+            transactions={transactions ?? []}
             loading={txLoading} 
-            currentUserId={currentUserId}
             currency={group.currency}
-            onUpdateStatus={handleUpdateStatus}
+          />
+        ) : viewMode === "payments" ? (
+          <SettlementPaymentsPanel
+            groupId={group.id}
+            payments={settlementPayments ?? []}
+            currentUserId={currentUserId}
             pendingOnly={pendingOnly}
+            loading={paymentsLoading}
+            onChanged={refreshSettlementData}
           />
         ) : viewMode === "graph" ? (
           <Suspense
@@ -364,7 +385,16 @@ export function GroupDetailPage() {
       </div>
 
       {showExpenseModal && <ExpenseModal group={group} onClose={() => setShowExpenseModal(false)} onCreated={handleMutationDone} />}
-      {showSettleModal && <SettleUpModal group={group} settlements={currentSettlements} onClose={() => setShowSettleModal(false)} onSettled={handleMutationDone} />}
+      {showSettleModal && (
+        <SettleUpModal
+          group={group}
+          settlements={currentSettlements}
+          pendingPayments={pendingPayments}
+          currentUserId={currentUserId}
+          onClose={() => setShowSettleModal(false)}
+          onChanged={refreshSettlementData}
+        />
+      )}
       {showDeleteModal && <DeleteGroupModal group={group} onClose={() => setShowDeleteModal(false)} />}
     </div>
   );
@@ -375,13 +405,10 @@ export function GroupDetailPage() {
 interface LedgerViewProps {
   transactions: Transaction[];
   loading: boolean;
-  currentUserId: string | null;
   currency: string;
-  onUpdateStatus: (txId: string, status: "COMPLETED" | "REJECTED") => void;
-  pendingOnly: boolean;
 }
 
-function LedgerView({ transactions, loading, currentUserId, currency, onUpdateStatus, pendingOnly }: LedgerViewProps) {
+function LedgerView({ transactions, loading, currency }: LedgerViewProps) {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -399,8 +426,8 @@ function LedgerView({ transactions, loading, currentUserId, currency, onUpdateSt
         <div className="w-16 h-16 rounded-2xl bg-surface-variant flex items-center justify-center">
           <span className="material-symbols-outlined text-outline text-[32px]">receipt_long</span>
         </div>
-        <p className="text-[14px] font-medium text-on-surface">{pendingOnly ? "No pending payments" : "No transactions yet"}</p>
-        <p className="text-[13px] text-on-surface-variant">{pendingOnly ? "This group has no settlement payments waiting for confirmation." : "Add your first expense to get started."}</p>
+        <p className="text-[14px] font-medium text-on-surface">No expenses yet</p>
+        <p className="text-[13px] text-on-surface-variant">Add your first shared expense to get started.</p>
       </div>
     );
   }
@@ -437,24 +464,7 @@ function LedgerView({ transactions, loading, currentUserId, currency, onUpdateSt
               <span className="text-[13px] text-on-surface truncate">{tx.paidBy.name}</span>
             </div>
             <div className="order-5 md:order-none col-span-1 text-[12px] text-left md:text-right">
-              {tx.status === "PENDING" ? (
-                tx.debtShares[0]?.owedById === currentUserId ? (
-                  <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => onUpdateStatus(tx.id, "COMPLETED")} className="btn-ghost !p-1 text-positive hover:bg-positive/10">
-                      <span className="material-symbols-outlined text-[16px]">check</span>
-                    </button>
-                    <button onClick={() => onUpdateStatus(tx.id, "REJECTED")} className="btn-ghost !p-1 text-error hover:bg-error/10">
-                      <span className="material-symbols-outlined text-[16px]">close</span>
-                    </button>
-                  </div>
-                ) : (
-                  <span className="text-warning text-[10px] font-semibold tracking-wider">PENDING</span>
-                )
-              ) : tx.status === "REJECTED" ? (
-                <span className="text-error text-[10px] font-semibold tracking-wider">REJECTED</span>
-              ) : (
-                <span className="text-on-surface-variant">{tx.debtShares.length}</span>
-              )}
+              <span className="text-on-surface-variant">{tx.debtShares.length}</span>
             </div>
             <div className="order-2 self-start md:self-auto col-span-2 text-data text-left md:text-right text-secondary font-semibold">
               {formatCurrency(tx.amount, currency)}

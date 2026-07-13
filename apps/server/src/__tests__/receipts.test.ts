@@ -38,6 +38,11 @@ const scannedReceipt = {
   rawText: "Corner Market\nTOTAL 12.50",
 };
 
+const pngImage = Buffer.concat([
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  Buffer.from("test-png-payload"),
+]);
+
 describe("Receipt scan API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -48,17 +53,51 @@ describe("Receipt scan API", () => {
     const response = await request(app)
       .post("/api/receipts/scan")
       .set("Authorization", "Bearer valid-token")
-      .attach("receipt", Buffer.from("png-image"), { filename: "receipt.png", contentType: "image/png" });
+      .field("ocrConsent", "true")
+      .attach("receipt", pngImage, { filename: "receipt.png", contentType: "image/png" });
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ success: true, data: scannedReceipt });
+    expect(response.body.data).toEqual({
+      vendor: "Corner Market",
+      date: "2026-07-10",
+      total: 12.5,
+      currency: "USD",
+      category: "groceries",
+      items: [],
+      confidence: 0.92,
+    });
+    expect(response.body.data).not.toHaveProperty("rawText");
     expect(mockScanReceipt).toHaveBeenCalledWith(expect.any(Buffer), "image/png");
+  });
+
+  it("requires explicit OCR processing consent", async () => {
+    const response = await request(app)
+      .post("/api/receipts/scan")
+      .set("Authorization", "Bearer valid-token")
+      .attach("receipt", pngImage, { filename: "receipt.png", contentType: "image/png" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain("Confirm receipt OCR processing");
+    expect(mockScanReceipt).not.toHaveBeenCalled();
+  });
+
+  it("rejects a spoofed image Content-Type", async () => {
+    const response = await request(app)
+      .post("/api/receipts/scan")
+      .set("Authorization", "Bearer valid-token")
+      .field("ocrConsent", "true")
+      .attach("receipt", Buffer.from("not actually a PNG"), { filename: "receipt.png", contentType: "image/png" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain("do not match");
+    expect(mockScanReceipt).not.toHaveBeenCalled();
   });
 
   it("rejects unsupported file types before scanning", async () => {
     const response = await request(app)
       .post("/api/receipts/scan")
       .set("Authorization", "Bearer valid-token")
+      .field("ocrConsent", "true")
       .attach("receipt", Buffer.from("not an image"), { filename: "receipt.pdf", contentType: "application/pdf" });
 
     expect(response.status).toBe(400);
@@ -69,7 +108,8 @@ describe("Receipt scan API", () => {
   it("requires a receipt image", async () => {
     const response = await request(app)
       .post("/api/receipts/scan")
-      .set("Authorization", "Bearer valid-token");
+      .set("Authorization", "Bearer valid-token")
+      .field("ocrConsent", "true");
 
     expect(response.status).toBe(400);
     expect(response.body.error).toContain("receipt image is required");

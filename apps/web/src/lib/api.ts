@@ -7,7 +7,7 @@
  *
  * Token storage:
  * - Access token: in-memory (cleared on page refresh)
- * - Refresh token: localStorage (persists across sessions)
+ * - Refresh token: Secure HttpOnly cookie, inaccessible to JavaScript
  */
 
 import type {
@@ -19,6 +19,7 @@ import type {
   AuditLogEntry,
   DashboardStats,
   ReceiptData,
+  SettlementPayment,
 } from "../types/index";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -26,6 +27,7 @@ const BASE_URL = `${API_URL}/api`;
 
 // In-memory token storage (not persisted — refresh token handles persistence)
 let accessToken: string | null = null;
+const SESSION_MARKER_KEY = "cashflow-session-present";
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
@@ -35,21 +37,22 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
-export function getRefreshToken(): string | null {
-  return localStorage.getItem("refreshToken");
+export function hasSessionMarker(): boolean {
+  return localStorage.getItem(SESSION_MARKER_KEY) === "1";
 }
 
-export function setRefreshToken(token: string | null) {
-  if (token) {
-    localStorage.setItem("refreshToken", token);
+export function setSessionMarker(present: boolean): void {
+  if (present) {
+    localStorage.setItem(SESSION_MARKER_KEY, "1");
   } else {
-    localStorage.removeItem("refreshToken");
+    localStorage.removeItem(SESSION_MARKER_KEY);
   }
 }
 
 export function clearAuth() {
   accessToken = null;
-  localStorage.removeItem("refreshToken");
+  localStorage.removeItem(SESSION_MARKER_KEY);
+  localStorage.removeItem("refreshToken"); // remove credentials left by older clients
   localStorage.removeItem("currentUserId"); // legacy cleanup
 }
 
@@ -62,14 +65,13 @@ let refreshPromise: Promise<User | null> | null = null;
  * Returns the safe user profile if successful, null otherwise.
  */
 async function tryRefresh(): Promise<User | null> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
+  if (!hasSessionMarker()) return null;
 
   try {
     const response = await fetch(`${BASE_URL}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -80,7 +82,7 @@ async function tryRefresh(): Promise<User | null> {
     const data = await response.json();
     if (data.success && data.data?.user) {
       setAccessToken(data.data.accessToken);
-      setRefreshToken(data.data.refreshToken);
+      setSessionMarker(true);
       return data.data.user as User;
     }
 
@@ -184,6 +186,7 @@ export const authApi = {
     const response = await fetch(`${BASE_URL}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(data),
     });
     const json = await response.json();
@@ -193,7 +196,6 @@ export const authApi = {
     return json.data as {
       user: User;
       accessToken: string;
-      refreshToken: string;
       expiresIn: number;
     };
   },
@@ -202,6 +204,7 @@ export const authApi = {
     const response = await fetch(`${BASE_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(data),
     });
     const json = await response.json();
@@ -211,19 +214,17 @@ export const authApi = {
     return json.data as {
       user: User;
       accessToken: string;
-      refreshToken: string;
       expiresIn: number;
     };
   },
 
   logout: async () => {
-    const refreshToken = getRefreshToken();
-    if (refreshToken) {
+    if (hasSessionMarker()) {
       try {
         await fetch(`${BASE_URL}/auth/logout`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken }),
+          credentials: "include",
         });
       } catch {
         // Best-effort logout
@@ -245,10 +246,14 @@ export const authApi = {
 
 // User API
 export const userApi = {
-  list: () => request<User[]>("/users"),
-  get: (id: string) => request<User>(`/users/${id}`),
-  delete: (id: string) =>
-    request<void>(`/users/${id}`, { method: "DELETE" }),
+  lookup: (email: string) =>
+    request<Pick<User, "id" | "name" | "email" | "avatarUrl">>("/users/lookup", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  me: () => request<User>("/users/me"),
+  updateMe: (data: { name?: string; email?: string; avatarUrl?: string | null }) =>
+    request<User>("/users/me", { method: "PATCH", body: JSON.stringify(data) }),
 };
 
 // Group API
@@ -294,7 +299,6 @@ export const transactionApi = {
       amount: number;
       description: string;
       currency?: string;
-      status?: "COMPLETED" | "PENDING" | "REJECTED";
       shares: { owedById: string; amount: number }[];
     }
   ) =>
@@ -304,17 +308,13 @@ export const transactionApi = {
     }),
   delete: (groupId: string, id: string) =>
     request<void>(`/groups/${groupId}/transactions/${id}`, { method: "DELETE" }),
-  updateStatus: (groupId: string, id: string, status: "COMPLETED" | "PENDING" | "REJECTED") =>
-    request<Transaction>(`/groups/${groupId}/transactions/${id}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ status }),
-    }),
 };
 
 export const receiptApi = {
   scan: (file: File) => {
     const formData = new FormData();
     formData.append("receipt", file);
+    formData.append("ocrConsent", "true");
     return upload<ReceiptData>("/receipts/scan", formData);
   },
 };
@@ -324,6 +324,34 @@ export const settlementApi = {
   get: (groupId: string) =>
     request<GroupBalances>(`/groups/${groupId}/settlements`),
 };
+
+export const settlementPaymentApi = {
+  list: (groupId: string, status?: "PENDING" | "CONFIRMED" | "REJECTED" | "CANCELLED") =>
+    request<SettlementPayment[]>(`/groups/${groupId}/settlement-payments${status ? `?status=${status}` : ""}`),
+  create: (groupId: string, data: { toUserId: string; amount: number; note?: string }) =>
+    request<SettlementPayment>(`/groups/${groupId}/settlement-payments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  confirm: (groupId: string, paymentId: string, note?: string) =>
+    decideSettlementPayment(groupId, paymentId, "confirm", note),
+  reject: (groupId: string, paymentId: string, note?: string) =>
+    decideSettlementPayment(groupId, paymentId, "reject", note),
+  cancel: (groupId: string, paymentId: string, note?: string) =>
+    decideSettlementPayment(groupId, paymentId, "cancel", note),
+};
+
+function decideSettlementPayment(
+  groupId: string,
+  paymentId: string,
+  action: "confirm" | "reject" | "cancel",
+  note?: string
+) {
+  return request<SettlementPayment>(`/groups/${groupId}/settlement-payments/${paymentId}/${action}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...(note ? { note } : {}) }),
+  });
+}
 
 // Audit Log API
 export const auditLogApi = {

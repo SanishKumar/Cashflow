@@ -42,7 +42,7 @@ router.get(
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    const group = await groupService.findById(req.params.id as string);
+    const group = await groupService.findById(req.params.id as string, req.userId!);
     res.json({ success: true, data: group });
   })
 );

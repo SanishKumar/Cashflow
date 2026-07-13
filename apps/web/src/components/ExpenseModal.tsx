@@ -43,6 +43,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [receiptConsent, setReceiptConsent] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [showReceiptItems, setShowReceiptItems] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -124,7 +125,10 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
   };
 
   const handleScan = async (file: File) => {
-
+    if (!receiptConsent) {
+      setError("Confirm receipt processing before choosing an image.");
+      return;
+    }
     setScanning(true);
     setError(null);
     try {
@@ -175,18 +179,37 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
             </div>
           )}
 
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-outline-variant/50 bg-surface-dim/50 p-3">
+            <input
+              type="checkbox"
+              checked={receiptConsent}
+              onChange={(event) => {
+                setReceiptConsent(event.target.checked);
+                setError(null);
+              }}
+              className="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span className="text-[11px] leading-relaxed text-on-surface-variant">
+              I understand that a receipt image may be sent to OCR.space to extract text. CashFlow processes the image in memory and does not save the uploaded file.
+            </span>
+          </label>
+
           {/* Drag & Drop OCR Zone */}
           <div 
-            className={`relative w-full shrink-0 min-h-[120px] border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center transition-colors cursor-pointer overflow-hidden ${
+            className={`relative w-full shrink-0 min-h-[120px] border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center transition-colors overflow-hidden ${receiptConsent ? "cursor-pointer" : "cursor-not-allowed opacity-65"} ${
               scanning 
                 ? "border-primary/50 bg-glow-primary" 
                 : "border-outline-variant/50 hover:border-primary/50 hover:bg-surface-variant/30"
             }`}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => receiptConsent && fileInputRef.current?.click()}
             onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
             onDrop={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              if (!receiptConsent) {
+                setError("Confirm receipt processing before dropping an image.");
+                return;
+              }
               const file = e.dataTransfer.files?.[0];
               if (file) handleScan(file);
             }}
@@ -194,7 +217,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
             {scanning ? (
               <>
                 <span className="material-symbols-outlined text-[32px] text-primary animate-spin mb-2">sync</span>
-                <p className="text-[13px] font-medium text-primary">Extracting receipt details securely...</p>
+                <p className="text-[13px] font-medium text-primary">Reading receipt details...</p>
                 <div className="absolute bottom-0 left-0 h-1 bg-primary animate-[progress-bar_2s_ease-in-out_infinite] w-full" />
               </>
             ) : (
@@ -205,6 +228,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
                 <button
                   type="button"
                   onClick={(event) => { event.stopPropagation(); cameraInputRef.current?.click(); }}
+                  disabled={!receiptConsent}
                   className="btn-secondary !h-10 mt-3"
                 >
                   <span className="material-symbols-outlined text-[17px]">photo_camera</span>

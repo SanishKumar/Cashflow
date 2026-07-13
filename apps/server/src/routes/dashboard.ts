@@ -1,225 +1,213 @@
-/**
- * Dashboard Routes — Aggregated KPI Stats
- *
- * GET /api/dashboard/stats — Returns aggregated analytics for the
- * authenticated user across all their groups.
- */
-
 import { Router } from "express";
 import { Prisma } from "@prisma/client";
 import prisma from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
+import { solveDebts } from "../wasm/wasmLoader.js";
+import type { DebtEdge, Settlement } from "../types/api.js";
 
 const router = Router();
-
 router.use(requireAuth);
 
-// GET /api/dashboard/stats
+interface EdgeRow {
+  groupId: string;
+  fromUserId: string;
+  fromName: string;
+  toUserId: string;
+  toName: string;
+  amount: Prisma.Decimal | number | string;
+}
+
 router.get(
   "/stats",
   asyncHandler(async (req, res) => {
     const userId = req.userId!;
-
-    // Get all groups the user belongs to
     const memberships = await prisma.groupMember.findMany({
       where: { userId },
-      select: { groupId: true },
+      select: {
+        group: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            currency: true,
+            _count: {
+              select: {
+                members: true,
+                transactions: { where: { status: "COMPLETED" } },
+              },
+            },
+          },
+        },
+      },
     });
-    const groupIds = memberships.map((m) => m.groupId);
+    const groups = memberships.map((membership) => membership.group);
+    const groupIds = groups.map((group) => group.id);
 
-    // Parallel queries for efficiency
-    const [
-      totalGroups,
-      totalTransactions,
-      volumeResult,
-      pendingSettlementsCount,
-      pendingSettlementRows,
-      recentActivity,
-      monthlyVolume,
-      netPosition,
-    ] = await Promise.all([
-      // Total groups
-      Promise.resolve(groupIds.length),
-
-      // Total transactions across all groups
-      prisma.transaction.count({
-        where: { groupId: { in: groupIds } },
-      }),
-
-      // Total volume (sum of all transaction amounts)
-      prisma.transaction.aggregate({
-        where: { groupId: { in: groupIds } },
-        _sum: { amount: true },
-      }),
-
-      // Pending transactions count
-      prisma.transaction.count({
+    const [pendingRows, recentActivity, edgeRows] = await Promise.all([
+      prisma.settlementPayment.findMany({
         where: {
           groupId: { in: groupIds },
           status: "PENDING",
+          OR: [{ fromUserId: userId }, { toUserId: userId }],
         },
-      }),
-
-      // A small routing summary lets the dashboard take users directly to
-      // each group that has settlement payments waiting for confirmation.
-      prisma.transaction.findMany({
-        where: {
-          groupId: { in: groupIds },
-          status: "PENDING",
-        },
-        select: {
-          groupId: true,
-          group: { select: { id: true, name: true } },
-        },
-      }),
-
-      // Recent activity (last 10 audit log entries)
-      prisma.auditLog.findMany({
-        where: { userId },
         orderBy: { createdAt: "desc" },
-        take: 10,
+        select: {
+          id: true,
+          groupId: true,
+          fromUserId: true,
+          toUserId: true,
+          amount: true,
+          currency: true,
+          createdAt: true,
+          group: { select: { name: true } },
+          fromUser: { select: { name: true } },
+          toUser: { select: { name: true } },
+        },
+      }),
+      prisma.auditLog.findMany({
+        where: { groupId: { in: groupIds } },
+        orderBy: { createdAt: "desc" },
+        take: 8,
         include: {
           user: { select: { id: true, name: true, email: true, avatarUrl: true } },
           group: { select: { id: true, name: true } },
         },
       }),
-
-      // Monthly volume: last 6 months of transaction data
-      getMonthlyVolume(groupIds),
-
-      // Net position can be calculated independently of the other stats.
-      calculateNetPosition(userId, groupIds),
+      getAggregatedEdges(groupIds),
     ]);
 
-    const pendingGroupMap = new Map<string, { groupId: string; groupName: string; pendingCount: number }>();
-    for (const row of pendingSettlementRows) {
-      const existing = pendingGroupMap.get(row.groupId);
-      if (existing) {
-        existing.pendingCount += 1;
-      } else {
-        pendingGroupMap.set(row.groupId, {
-          groupId: row.group.id,
-          groupName: row.group.name,
-          pendingCount: 1,
-        });
-      }
+    const edgesByGroup = new Map<string, DebtEdge[]>();
+    const namesByGroup = new Map<string, Map<string, string>>();
+    for (const row of edgeRows) {
+      const edges = edgesByGroup.get(row.groupId) ?? [];
+      edges.push({ from: row.fromUserId, to: row.toUserId, amount: Number(row.amount) });
+      edgesByGroup.set(row.groupId, edges);
+
+      const names = namesByGroup.get(row.groupId) ?? new Map<string, string>();
+      names.set(row.fromUserId, row.fromName);
+      names.set(row.toUserId, row.toName);
+      namesByGroup.set(row.groupId, names);
     }
-    const pendingGroups = [...pendingGroupMap.values()].sort(
-      (a, b) => b.pendingCount - a.pendingCount || a.groupName.localeCompare(b.groupName)
+
+    const settlementPlans = await Promise.all(groups.map(async (group) => {
+      const outcome = await solveDebts(edgesByGroup.get(group.id) ?? [], namesByGroup.get(group.id) ?? new Map());
+      return { group, settlements: outcome.settlements };
+    }));
+
+    const pendingOutgoingPairs = new Set(
+      pendingRows
+        .filter((payment) => payment.fromUserId === userId)
+        .map((payment) => `${payment.groupId}:${payment.fromUserId}:${payment.toUserId}`)
     );
+    const toDashboardSettlement = (group: typeof groups[number], settlement: Settlement) => ({
+      groupId: group.id,
+      groupName: group.name,
+      currency: group.currency,
+      fromUserId: settlement.from,
+      fromName: settlement.fromName,
+      toUserId: settlement.to,
+      toName: settlement.toName,
+      amount: settlement.amount,
+      state: pendingOutgoingPairs.has(`${group.id}:${settlement.from}:${settlement.to}`)
+        ? "PENDING_CONFIRMATION" as const
+        : "OPEN" as const,
+    });
+
+    const outgoingSettlements = settlementPlans.flatMap(({ group, settlements }) =>
+      settlements.filter((settlement) => settlement.from === userId).map((settlement) => toDashboardSettlement(group, settlement))
+    );
+    const incomingSettlements = settlementPlans.flatMap(({ group, settlements }) =>
+      settlements.filter((settlement) => settlement.to === userId).map((settlement) => toDashboardSettlement(group, settlement))
+    );
+
+    const pendingConfirmations = pendingRows
+      .filter((payment) => payment.toUserId === userId)
+      .map((payment) => ({
+        id: payment.id,
+        groupId: payment.groupId,
+        groupName: payment.group.name,
+        fromUserId: payment.fromUserId,
+        fromName: payment.fromUser.name,
+        amount: Number(payment.amount),
+        currency: payment.currency,
+        createdAt: payment.createdAt,
+      }));
+
+    const pendingGroupMap = new Map<string, { groupId: string; groupName: string; pendingCount: number }>();
+    for (const payment of pendingConfirmations) {
+      const current = pendingGroupMap.get(payment.groupId);
+      if (current) current.pendingCount += 1;
+      else pendingGroupMap.set(payment.groupId, {
+        groupId: payment.groupId,
+        groupName: payment.groupName,
+        pendingCount: 1,
+      });
+    }
 
     res.json({
       success: true,
       data: {
-        totalGroups,
-        totalTransactions,
-        totalVolume: volumeResult._sum.amount ?? 0,
-        pendingSettlements: pendingSettlementsCount,
-        pendingGroups,
-        netPosition,
+        totalGroups: groups.length,
+        totalTransactions: groups.reduce((total, group) => total + group._count.transactions, 0),
+        pendingSettlements: pendingConfirmations.length,
+        pendingGroups: [...pendingGroupMap.values()],
+        groups: groups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          description: group.description,
+          currency: group.currency,
+          memberCount: group._count.members,
+          expenseCount: group._count.transactions,
+        })),
+        outgoingSettlements,
+        incomingSettlements,
+        pendingConfirmations,
         recentActivity,
-        monthlyVolume,
       },
     });
   })
 );
 
-/**
- * Calculate the user's net balance across all groups.
- * Positive = others owe you. Negative = you owe others.
- */
-async function calculateNetPosition(userId: string, groupIds: string[]): Promise<number> {
-  if (groupIds.length === 0) return 0;
+async function getAggregatedEdges(groupIds: string[]): Promise<EdgeRow[]> {
+  if (groupIds.length === 0) return [];
 
-  const [paidResult, owedResult] = await Promise.all([
-    // Total amount paid by this user
-    prisma.transaction.aggregate({
-      where: {
-        groupId: { in: groupIds },
-        paidById: userId,
-        status: { not: "REJECTED" },
-      },
-      _sum: { amount: true },
-    }),
-
-    // Total debt shares assigned to this user
-    prisma.debtShare.aggregate({
-      where: {
-        transaction: {
-          groupId: { in: groupIds },
-          status: { not: "REJECTED" },
-        },
-        owedById: userId,
-      },
-      _sum: { amount: true },
-    }),
-  ]);
-
-  const totalPaid = paidResult._sum.amount ?? 0;
-  const totalOwed = owedResult._sum.amount ?? 0;
-
-  return Math.round((totalPaid - totalOwed) * 100) / 100;
-}
-
-/**
- * Get monthly transaction volume for the last 6 months.
- * Returns an array of { month: "2026-01", volume: 1234.56 }.
- */
-async function getMonthlyVolume(
-  groupIds: string[]
-): Promise<{ month: string; volume: number }[]> {
-  if (groupIds.length === 0) {
-    return generateEmptyMonths();
-  }
-
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
-  sixMonthsAgo.setDate(1);
-  sixMonthsAgo.setHours(0, 0, 0, 0);
-
-  // Let PostgreSQL aggregate the historical rows. This keeps the response
-  // payload and Node.js work constant even as the ledger grows.
-  const rows = await prisma.$queryRaw<{ month: string; volume: number }[]>(
-    Prisma.sql`
+  return prisma.$queryRaw<EdgeRow[]>(Prisma.sql`
+    WITH combined_edges AS (
       SELECT
-        to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS "month",
-        COALESCE(SUM("amount"), 0) AS "volume"
-      FROM "transactions"
-      WHERE "groupId" IN (${Prisma.join(groupIds)})
-        AND "createdAt" >= ${sixMonthsAgo}
-        AND "status" != ${"REJECTED"}::"TransactionStatus"
-      GROUP BY date_trunc('month', "createdAt")
-      ORDER BY date_trunc('month', "createdAt")
-    `
-  );
+        transaction."groupId" AS "groupId",
+        share."owedById" AS "fromUserId",
+        transaction."paidById" AS "toUserId",
+        share."amount" AS "amount"
+      FROM "debt_shares" AS share
+      JOIN "transactions" AS transaction ON transaction."id" = share."transactionId"
+      WHERE transaction."groupId" IN (${Prisma.join(groupIds)})
+        AND transaction."status" = ${"COMPLETED"}::"TransactionStatus"
+        AND share."owedById" <> transaction."paidById"
 
-  const monthMap = new Map<string, number>();
-  for (const row of rows) {
-    monthMap.set(row.month, Number(row.volume));
-  }
+      UNION ALL
 
-  // Fill in all 6 months (even if no transactions)
-  const result: { month: string; volume: number }[] = [];
-  for (let i = 0; i < 6; i++) {
-    const d = new Date();
-    d.setMonth(d.getMonth() - (5 - i));
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    result.push({ month: key, volume: Math.round((monthMap.get(key) ?? 0) * 100) / 100 });
-  }
-
-  return result;
-}
-
-function generateEmptyMonths(): { month: string; volume: number }[] {
-  const result: { month: string; volume: number }[] = [];
-  for (let i = 0; i < 6; i++) {
-    const d = new Date();
-    d.setMonth(d.getMonth() - (5 - i));
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    result.push({ month: key, volume: 0 });
-  }
-  return result;
+      SELECT
+        payment."groupId" AS "groupId",
+        payment."toUserId" AS "fromUserId",
+        payment."fromUserId" AS "toUserId",
+        payment."amount" AS "amount"
+      FROM "settlement_payments" AS payment
+      WHERE payment."groupId" IN (${Prisma.join(groupIds)})
+        AND payment."status" = ${"CONFIRMED"}::"SettlementPaymentStatus"
+    )
+    SELECT
+      edge."groupId",
+      edge."fromUserId",
+      sender."name" AS "fromName",
+      edge."toUserId",
+      recipient."name" AS "toName",
+      SUM(edge."amount") AS "amount"
+    FROM combined_edges AS edge
+    JOIN "users" AS sender ON sender."id" = edge."fromUserId"
+    JOIN "users" AS recipient ON recipient."id" = edge."toUserId"
+    GROUP BY edge."groupId", edge."fromUserId", sender."name", edge."toUserId", recipient."name"
+  `);
 }
 
 export default router;

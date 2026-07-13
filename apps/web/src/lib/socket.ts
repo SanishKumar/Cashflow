@@ -17,6 +17,7 @@ interface ServerToClientEvents {
   "settlements:updated": (settlements: Settlement[]) => void;
   "member:joined": (member: { userId: string; name: string }) => void;
   "member:left": (data: { userId: string }) => void;
+  "group:error": (data: { code: "FORBIDDEN"; message: string }) => void;
   "server:pong": (sentAt: number) => void;
 }
 
@@ -52,6 +53,8 @@ export function getSocket(): TypedSocket {
     socket.on("disconnect", (reason) => {
       if (debugSocket) console.log("[WS] Disconnected:", reason);
     });
+  } else if (!socket.connected) {
+    socket.auth = { token: getAccessToken() };
   }
 
   return socket;

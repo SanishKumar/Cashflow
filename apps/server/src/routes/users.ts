@@ -1,8 +1,9 @@
 /**
  * User Routes — Protected
  *
- * User management endpoints. Listing and reading users is protected
- * by auth. User creation now goes through /api/auth/register instead.
+ * Self-service account endpoints plus an exact-email invite lookup.
+ * There is deliberately no global user directory and no route that allows
+ * one account to read, update, or delete another account.
  */
 
 import { Router } from "express";
@@ -11,46 +12,39 @@ import { validate } from "../middleware/validate.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { UpdateUserSchema } from "../types/api.js";
+import { z } from "zod";
 
 const router = Router();
 
 // All user routes require auth
 router.use(requireAuth);
 
-// GET /api/users — List all users (for member picker, etc.)
-router.get(
-  "/",
-  asyncHandler(async (_req, res) => {
-    const users = await userService.findAll();
-    res.json({ success: true, data: users });
-  })
-);
-
-// GET /api/users/:id — Get user by ID
-router.get(
-  "/:id",
+// POST /api/users/lookup — exact email lookup for an explicit invitation
+router.post(
+  "/lookup",
+  validate(z.object({ email: z.string().email("Enter a valid email address") })),
   asyncHandler(async (req, res) => {
-    const user = await userService.findById(req.params.id as string);
+    const user = await userService.findByEmail(req.body.email);
     res.json({ success: true, data: user });
   })
 );
 
-// PATCH /api/users/:id — Update a user (only self or admin in future)
+// GET /api/users/me — current account only
+router.get(
+  "/me",
+  asyncHandler(async (req, res) => {
+    const user = await userService.findById(req.userId!);
+    res.json({ success: true, data: user });
+  })
+);
+
+// PATCH /api/users/me — current account only
 router.patch(
-  "/:id",
+  "/me",
   validate(UpdateUserSchema),
   asyncHandler(async (req, res) => {
-    const user = await userService.update(req.params.id as string, req.body);
+    const user = await userService.update(req.userId!, req.body);
     res.json({ success: true, data: user });
-  })
-);
-
-// DELETE /api/users/:id — Delete a user
-router.delete(
-  "/:id",
-  asyncHandler(async (req, res) => {
-    await userService.delete(req.params.id as string);
-    res.json({ success: true, message: "User deleted" });
   })
 );
 

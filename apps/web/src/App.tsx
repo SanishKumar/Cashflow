@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import { Layout } from "./components/Layout";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -13,6 +13,7 @@ const LedgerPage = lazy(() => import("./pages/LedgerPage").then(({ LedgerPage })
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then(({ SettingsPage }) => ({ default: SettingsPage })));
 const ProfilePage = lazy(() => import("./pages/ProfilePage").then(({ ProfilePage }) => ({ default: ProfilePage })));
 const LoginPage = lazy(() => import("./pages/LoginPage").then(({ LoginPage }) => ({ default: LoginPage })));
+const DemoPage = lazy(() => import("./pages/DemoPage").then(({ DemoPage }) => ({ default: DemoPage })));
 
 function RouteLoading() {
   return (
@@ -48,13 +49,22 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function UserScope() {
+  return (
+    <UserProvider>
+      <Outlet />
+    </UserProvider>
+  );
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
-        <UserProvider>
-          <Suspense fallback={<RouteLoading />}>
-            <Routes>
+        <Suspense fallback={<RouteLoading />}>
+          <Routes>
+            <Route path="/demo" element={<DemoPage />} />
+            <Route element={<UserScope />}>
               <Route path="/login" element={<LoginPage />} />
               <Route
                 element={
@@ -70,9 +80,9 @@ export default function App() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
               </Route>
-            </Routes>
-          </Suspense>
-        </UserProvider>
+            </Route>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </ThemeProvider>
   );

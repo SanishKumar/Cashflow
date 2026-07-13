@@ -1,142 +1,138 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { DashboardPage } from "../pages/DashboardPage";
-import { dashboardApi, groupApi } from "../lib/api";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BrowserRouter } from "react-router-dom";
+import { DashboardPage } from "../pages/DashboardPage";
+import { dashboardApi } from "../lib/api";
 import type { DashboardStats } from "../types";
 
-vi.mock("../lib/api", () => ({
-  dashboardApi: {
-    getStats: vi.fn(),
-  },
-  groupApi: {
-    list: vi.fn(),
-  },
+vi.mock("../lib/api", () => ({ dashboardApi: { getStats: vi.fn() } }));
+vi.mock("../contexts/UserContext", () => ({
+  useUser: () => ({ currentUser: { id: "user-1", name: "Alice Smith", email: "alice@example.com", avatarUrl: null } }),
 }));
 
 const mockStats: DashboardStats = {
-  totalGroups: 5,
-  totalTransactions: 42,
-  netPosition: 1250.5,
-  pendingSettlements: 3,
-  pendingGroups: [
-    { groupId: "group-1", groupName: "Trip", pendingCount: 3 },
-  ],
-  monthlyVolume: [
-    { month: "2026-01", volume: 100 },
-    { month: "2026-02", volume: 200 },
-    { month: "2026-03", volume: 50 },
-    { month: "2026-04", volume: 300 },
-    { month: "2026-05", volume: 150 },
-    { month: "2026-06", volume: 400 },
-  ],
-  totalVolume: 1200,
-  recentActivity: [
-    {
-      id: "log-1",
-      userId: "user-1",
-      groupId: "group-1",
-      action: "EXPENSE_ADDED",
-      details: "Added dinner expense",
-      createdAt: new Date().toISOString(),
-      user: { id: "user-1", name: "Alice", email: "alice@test.com", avatarUrl: null },
-      group: { id: "group-1", name: "Trip" },
-    },
-  ],
+  totalGroups: 2,
+  totalTransactions: 12,
+  pendingSettlements: 1,
+  pendingGroups: [{ groupId: "group-1", groupName: "Trip", pendingCount: 1 }],
+  groups: [{
+    id: "group-1",
+    name: "Trip",
+    description: "Lisbon weekend",
+    currency: "EUR",
+    memberCount: 4,
+    expenseCount: 8,
+  }],
+  outgoingSettlements: [{
+    groupId: "group-1",
+    groupName: "Trip",
+    currency: "EUR",
+    fromUserId: "user-1",
+    fromName: "Alice",
+    toUserId: "user-2",
+    toName: "Bob",
+    amount: 42.5,
+    state: "OPEN",
+  }],
+  incomingSettlements: [{
+    groupId: "group-2",
+    groupName: "Home",
+    currency: "USD",
+    fromUserId: "user-3",
+    fromName: "Chris",
+    toUserId: "user-1",
+    toName: "Alice",
+    amount: 18,
+    state: "OPEN",
+  }],
+  pendingConfirmations: [{
+    id: "payment-1",
+    groupId: "group-1",
+    groupName: "Trip",
+    fromUserId: "user-4",
+    fromName: "Dana",
+    amount: 20,
+    currency: "EUR",
+    createdAt: new Date().toISOString(),
+  }],
+  recentActivity: [{
+    id: "log-1",
+    userId: "user-1",
+    groupId: "group-1",
+    action: "EXPENSE_ADDED",
+    details: "Added dinner expense",
+    createdAt: new Date().toISOString(),
+    user: { id: "user-1", name: "Alice", email: "alice@test.com", avatarUrl: null },
+    group: { id: "group-1", name: "Trip" },
+  }],
 };
 
-function renderWithRouter(ui: React.ReactElement) {
-  return render(<BrowserRouter>{ui}</BrowserRouter>);
+function renderDashboard() {
+  return render(<BrowserRouter><DashboardPage /></BrowserRouter>);
 }
 
 describe("DashboardPage", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(groupApi.list).mockResolvedValue([]);
-  });
+  beforeEach(() => vi.clearAllMocks());
 
-  it("shows loading state initially", () => {
-    // Return an unresolved promise to keep it in loading state
+  it("shows a loading skeleton", () => {
     vi.mocked(dashboardApi.getStats).mockImplementation(() => new Promise(() => {}));
-    
-    const { container } = renderWithRouter(<DashboardPage />);
-
+    const { container } = renderDashboard();
     expect(container.querySelector(".animate-pulse")).toBeInTheDocument();
   });
 
-  it("shows error state on API failure", async () => {
+  it("shows an API error", async () => {
     vi.mocked(dashboardApi.getStats).mockRejectedValue(new Error("Failed to load"));
-    
-    renderWithRouter(<DashboardPage />);
-    
-    await waitFor(() => {
-      expect(screen.getByText("Your overview is unavailable")).toBeInTheDocument();
-      // The useApi hook might display error.message or standard error string
-    });
+    renderDashboard();
+    expect(await screen.findByText("Your overview is unavailable")).toBeInTheDocument();
   });
 
-  it("renders KPIs correctly", async () => {
+  it("renders action-focused account metrics without combining currencies", async () => {
     vi.mocked(dashboardApi.getStats).mockResolvedValue(mockStats);
-    
-    renderWithRouter(<DashboardPage />);
-    
-    await waitFor(() => {
-      // KPI values
-      expect(screen.getByText("5")).toBeInTheDocument(); // Groups
-      expect(screen.getByText("42")).toBeInTheDocument(); // Transactions
-      expect(screen.getByText("+$1,251")).toBeInTheDocument(); // Net Position
-      expect(screen.getByText("3")).toBeInTheDocument(); // Pending Settlements
-    });
+    renderDashboard();
+
+    expect(await screen.findByText("Alice, here’s what needs attention.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Active groups: 2")).toBeInTheDocument();
+    expect(screen.getByLabelText("Expenses: 12")).toBeInTheDocument();
+    expect(screen.getByLabelText("To confirm: 1")).toBeInTheDocument();
+    expect(screen.queryByText(/net position/i)).not.toBeInTheDocument();
   });
 
-  it("renders activity feed", async () => {
+  it("links confirmations and outgoing payments to the correct group flow", async () => {
     vi.mocked(dashboardApi.getStats).mockResolvedValue(mockStats);
-    
-    renderWithRouter(<DashboardPage />);
-    
-    await waitFor(() => {
-      expect(screen.getByText("Recent activity")).toBeInTheDocument();
-      expect(screen.getByText("Alice")).toBeInTheDocument();
-      expect(screen.getByText("Added dinner expense")).toBeInTheDocument();
-      expect(screen.getAllByText("Trip").length).toBeGreaterThan(0);
-      expect(screen.getByRole("link", { name: "All activity" })).toHaveAttribute("href", "/ledger?tab=activity");
-    });
-  });
-
-  it("links pending settlement payments to the affected group", async () => {
-    vi.mocked(dashboardApi.getStats).mockResolvedValue(mockStats);
-
-    renderWithRouter(<DashboardPage />);
+    renderDashboard();
 
     await waitFor(() => {
-      expect(screen.getByRole("link", { name: /3 pending payments/i })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: "Confirm €20.00 from Dana in Trip" })).toHaveAttribute(
         "href",
         "/groups/group-1?status=pending"
+      );
+      expect(screen.getByRole("link", { name: "Pay €42.50 to Bob in Trip" })).toHaveAttribute(
+        "href",
+        "/groups/group-1?settle=1"
       );
     });
   });
 
-  it("renders empty activity feed state", async () => {
-    vi.mocked(dashboardApi.getStats).mockResolvedValue({
-      ...mockStats,
-      recentActivity: [],
-    });
-    
-    renderWithRouter(<DashboardPage />);
-    
-    await waitFor(() => {
-      expect(screen.getByText("No recent activity")).toBeInTheDocument();
-    });
+  it("keeps activity one level deeper", async () => {
+    vi.mocked(dashboardApi.getStats).mockResolvedValue(mockStats);
+    renderDashboard();
+
+    expect(await screen.findByText("Recent activity")).toBeInTheDocument();
+    expect(screen.getByText("Added dinner expense")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "All activity" })).toHaveAttribute("href", "/ledger?tab=activity");
   });
 
-  it("renders the volume chart", async () => {
-    vi.mocked(dashboardApi.getStats).mockResolvedValue(mockStats);
-    
-    renderWithRouter(<DashboardPage />);
-    
-    await waitFor(() => {
-      expect(screen.getByText("Shared spending")).toBeInTheDocument();
-      expect(screen.getByText("$1,200")).toBeInTheDocument(); // Total volume
+  it("shows a settled state when no action is assigned", async () => {
+    vi.mocked(dashboardApi.getStats).mockResolvedValue({
+      ...mockStats,
+      outgoingSettlements: [],
+      incomingSettlements: [],
+      pendingConfirmations: [],
+      pendingSettlements: 0,
     });
+    renderDashboard();
+
+    expect(await screen.findByText("Nothing needs your attention")).toBeInTheDocument();
+    expect(screen.getByText("No one owes you right now")).toBeInTheDocument();
   });
 });

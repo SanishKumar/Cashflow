@@ -12,7 +12,8 @@ const redisUrl = process.env.UPSTASH_REDIS_REST_URL
   : process.env.REDIS_URL || "redis://localhost:6379";
 
 const connectionOptions = {
-  tls: redisUrl.startsWith("rediss") ? { rejectUnauthorized: false } : undefined,
+  // Let Node verify the Redis provider's certificate chain.
+  tls: redisUrl.startsWith("rediss") ? {} : undefined,
   maxRetriesPerRequest: 3,
 };
 
@@ -66,7 +67,8 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  passOnStoreError: true,
+  // Authentication fails closed if the shared limiter store is unavailable.
+  passOnStoreError: false,
   ...redisStoreOptions("rl:auth:"),
   message: {
     success: false,
@@ -97,7 +99,7 @@ export const receiptScanLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => `receipt:${req.userId || (req.ip ? ipKeyGenerator(req.ip) : "unknown-ip")}`,
   skip: (req) => isPremiumReceiptUser(req.userId),
-  passOnStoreError: true,
+  passOnStoreError: false,
   ...redisStoreOptions("rl:receipt-scan:"),
   message: {
     success: false,

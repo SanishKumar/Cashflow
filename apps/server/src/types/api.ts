@@ -34,20 +34,39 @@ export const AddMemberSchema = z.object({
   userId: z.string().min(1, "User ID is required"),
 });
 
+const MoneyAmountSchema = z
+  .number()
+  .finite()
+  .positive("Amount must be positive")
+  .max(1_000_000_000, "Amount is too large")
+  .refine(
+    (amount) => Math.abs(amount * 100 - Math.round(amount * 100)) < 1e-7,
+    "Amount must have no more than two decimal places"
+  );
+
 export const CreateTransactionSchema = z.object({
   paidById: z.string().min(1, "Payer ID is required"),
-  amount: z.number().positive("Amount must be positive"),
+  amount: MoneyAmountSchema,
   description: z.string().min(1, "Description is required").max(500),
   shares: z
     .array(
       z.object({
         owedById: z.string().min(1),
-        amount: z.number().positive(),
+        amount: MoneyAmountSchema,
       })
     )
     .min(1, "At least one debt share is required"),
   currency: z.string().length(3).optional(),
-  status: z.enum(["COMPLETED", "PENDING", "REJECTED"]).optional(),
+});
+
+export const CreateSettlementPaymentSchema = z.object({
+  toUserId: z.string().min(1, "Recipient ID is required"),
+  amount: MoneyAmountSchema,
+  note: z.string().trim().max(500).optional(),
+});
+
+export const DecideSettlementPaymentSchema = z.object({
+  note: z.string().trim().max(500).optional(),
 });
 
 // ── TypeScript Types (derived from Zod) ────────
@@ -58,6 +77,7 @@ export type CreateGroupInput = z.infer<typeof CreateGroupSchema>;
 export type UpdateGroupInput = z.infer<typeof UpdateGroupSchema>;
 export type AddMemberInput = z.infer<typeof AddMemberSchema>;
 export type CreateTransactionInput = z.infer<typeof CreateTransactionSchema>;
+export type CreateSettlementPaymentInput = z.infer<typeof CreateSettlementPaymentSchema>;
 
 // ── API Response Types ─────────────────────────
 
@@ -118,6 +138,7 @@ export interface ServerToClientEvents {
   "settlements:updated": (settlements: Settlement[]) => void;
   "member:joined": (member: { userId: string; name: string }) => void;
   "member:left": (data: { userId: string }) => void;
+  "group:error": (data: { code: "FORBIDDEN"; message: string }) => void;
   "server:pong": (sentAt: number) => void;
 }
 

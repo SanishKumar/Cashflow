@@ -65,7 +65,7 @@ export function errorHandler(
     const multerCode = (err as Error & { code?: string }).code;
     res.status(400).json({
       success: false,
-      error: multerCode === "LIMIT_FILE_SIZE" ? "Receipt images must be 10MB or smaller" : "Invalid receipt upload",
+      error: multerCode === "LIMIT_FILE_SIZE" ? "Receipt images must be 5MB or smaller" : "Invalid receipt upload",
       code: multerCode || "UPLOAD_ERROR",
     });
     return;

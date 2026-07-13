@@ -30,6 +30,10 @@ const ACTION_ICONS: Record<string, { icon: string; color: string }> = {
   TRANSACTION_COMPLETED: { icon: "check_circle", color: "text-positive" },
   TRANSACTION_PENDING: { icon: "schedule", color: "text-warning" },
   TRANSACTION_REJECTED: { icon: "cancel", color: "text-error" },
+  SETTLEMENT_SENT: { icon: "outgoing_mail", color: "text-warning" },
+  SETTLEMENT_CONFIRMED: { icon: "task_alt", color: "text-positive" },
+  SETTLEMENT_REJECTED: { icon: "cancel", color: "text-error" },
+  SETTLEMENT_CANCELLED: { icon: "block", color: "text-on-surface-variant" },
 };
 
 interface GroupWithTransactions {

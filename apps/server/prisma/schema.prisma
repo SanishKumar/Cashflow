@@ -8,19 +8,21 @@ datasource db {
 }
 
 model User {
-  id           String        @id @default(cuid())
+  id           String   @id @default(cuid())
   name         String
-  email        String        @unique
+  email        String   @unique
   passwordHash String
   avatarUrl    String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  memberships GroupMember[]
-  paidBy      Transaction[] @relation("PaidBy")
-  debtShares  DebtShare[]
-  auditLogs   AuditLog[]
-  sessions    Session[]
+  memberships                GroupMember[]
+  paidBy                     Transaction[]       @relation("PaidBy")
+  debtShares                 DebtShare[]
+  auditLogs                  AuditLog[]
+  sessions                   Session[]
+  sentSettlementPayments     SettlementPayment[] @relation("SettlementPaymentFrom")
+  receivedSettlementPayments SettlementPayment[] @relation("SettlementPaymentTo")
 
   @@map("users")
 }
@@ -53,6 +55,13 @@ enum GroupRole {
   AUDITOR
 }
 
+enum SettlementPaymentStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  CANCELLED
+}
+
 enum AuditAction {
   GROUP_CREATED
   GROUP_DELETED
@@ -65,6 +74,10 @@ enum AuditAction {
   EXPENSE_DELETED
   EXPENSE_UPDATED
   SETTLEMENT_COMPLETED
+  SETTLEMENT_SENT
+  SETTLEMENT_CONFIRMED
+  SETTLEMENT_REJECTED
+  SETTLEMENT_CANCELLED
   EXPORT_CSV
   EXPORT_PDF
   EXPORT_EMAIL
@@ -74,16 +87,17 @@ enum AuditAction {
 }
 
 model Group {
-  id          String        @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   description String?
-  currency    String        @default("USD")
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  currency    String   @default("USD")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  members      GroupMember[]
-  transactions Transaction[]
-  auditLogs    AuditLog[]
+  members            GroupMember[]
+  transactions       Transaction[]
+  auditLogs          AuditLog[]
+  settlementPayments SettlementPayment[]
 
   @@map("groups")
 }
@@ -92,7 +106,7 @@ model GroupMember {
   id       String    @id @default(cuid())
   userId   String
   groupId  String
-  role     GroupRole  @default(MEMBER)
+  role     GroupRole @default(MEMBER)
   joinedAt DateTime  @default(now())
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -104,16 +118,16 @@ model GroupMember {
 }
 
 model Transaction {
-  id          String   @id @default(cuid())
-  groupId     String
-  paidById    String
-  amount           Float
+  id               String            @id @default(cuid())
+  groupId          String
+  paidById         String
+  amount           Decimal           @db.Decimal(19, 4)
   originalCurrency String?
-  exchangeRate     Float?
+  exchangeRate     Decimal?          @db.Decimal(20, 10)
   description      String
   status           TransactionStatus @default(COMPLETED)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   group      Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
   paidBy     User        @relation("PaidBy", fields: [paidById], references: [id])
@@ -125,10 +139,10 @@ model Transaction {
 }
 
 model DebtShare {
-  id            String @id @default(cuid())
+  id            String  @id @default(cuid())
   transactionId String
   owedById      String
-  amount        Float
+  amount        Decimal @db.Decimal(19, 4)
 
   transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   owedBy      User        @relation(fields: [owedById], references: [id])
@@ -136,6 +150,29 @@ model DebtShare {
   @@index([transactionId])
   @@index([owedById])
   @@map("debt_shares")
+}
+
+model SettlementPayment {
+  id           String                  @id @default(cuid())
+  groupId      String
+  fromUserId   String
+  toUserId     String
+  amount       Decimal                 @db.Decimal(19, 4)
+  currency     String
+  status       SettlementPaymentStatus @default(PENDING)
+  note         String?
+  decisionNote String?
+  createdAt    DateTime                @default(now())
+  decidedAt    DateTime?
+
+  group    Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fromUser User  @relation("SettlementPaymentFrom", fields: [fromUserId], references: [id])
+  toUser   User  @relation("SettlementPaymentTo", fields: [toUserId], references: [id])
+
+  @@index([groupId, createdAt])
+  @@index([fromUserId, status])
+  @@index([toUserId, status])
+  @@map("settlement_payments")
 }
 
 model AuditLog {

@@ -7,7 +7,9 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { groupApi, userApi } from "../lib/api";
 import { useUser } from "../contexts/UserContext";
-import type { Group } from "../types/index";
+import type { Group, User } from "../types/index";
+
+type InviteUser = Pick<User, "id" | "name" | "email" | "avatarUrl">;
 
 const GROUP_ACCENTS = [
   "from-violet-500 to-indigo-600",
@@ -26,12 +28,13 @@ export function GroupsPage() {
   const { currentUserId } = useUser();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: groups, loading, error, refetch } = useApi<Group[]>(() => groupApi.list());
-  const { data: users } = useApi(() => userApi.list());
-  const userList = users ?? [];
   const [showCreate, setShowCreate] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDesc, setNewGroupDesc] = useState("");
-  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<InviteUser[]>([]);
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberLookupLoading, setMemberLookupLoading] = useState(false);
+  const [memberLookupError, setMemberLookupError] = useState<string | null>(null);
   const [currency, setCurrency] = useState("USD");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -65,12 +68,13 @@ export function GroupsPage() {
         name: newGroupName.trim(),
         description: newGroupDesc.trim() || undefined,
         currency,
-        memberIds: selectedMembers.length > 0 ? selectedMembers : undefined,
+        memberIds: selectedMembers.length > 0 ? selectedMembers.map((member) => member.id) : undefined,
       });
       setNewGroupName("");
       setNewGroupDesc("");
       setCurrency("USD");
       setSelectedMembers([]);
+      setMemberEmail("");
       setCreatePanelOpen(false);
       refetch();
     } catch (err) {
@@ -80,10 +84,29 @@ export function GroupsPage() {
     }
   };
 
-  const toggleMember = (userId: string) => {
-    setSelectedMembers((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
-    );
+  const addMemberByEmail = async () => {
+    const email = memberEmail.trim().toLowerCase();
+    if (!email) return;
+
+    setMemberLookupLoading(true);
+    setMemberLookupError(null);
+    try {
+      const member = await userApi.lookup(email);
+      if (member.id === currentUserId) {
+        setMemberLookupError("You are added automatically as the group administrator.");
+        return;
+      }
+      if (selectedMembers.some((selected) => selected.id === member.id)) {
+        setMemberLookupError("This person is already selected.");
+        return;
+      }
+      setSelectedMembers((current) => [...current, member]);
+      setMemberEmail("");
+    } catch (err) {
+      setMemberLookupError(err instanceof Error ? err.message : "Could not find that account.");
+    } finally {
+      setMemberLookupLoading(false);
+    }
   };
 
   return (
@@ -171,28 +194,55 @@ export function GroupsPage() {
                 </select>
               </div>
 
-              {userList.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <label className="text-label">Add Members</label>
-                  <div className="flex flex-wrap gap-2">
-                    {userList.map((user) => (
+              <div className="flex flex-col gap-2">
+                <label className="text-label" htmlFor="member-email">Add members by exact email <span className="text-outline">(optional)</span></label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    id="member-email"
+                    type="email"
+                    className="input-field"
+                    placeholder="friend@example.com"
+                    value={memberEmail}
+                    onChange={(event) => {
+                      setMemberEmail(event.target.value);
+                      setMemberLookupError(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void addMemberByEmail();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void addMemberByEmail()}
+                    disabled={memberLookupLoading || !memberEmail.trim()}
+                    className="btn-secondary shrink-0"
+                  >
+                    {memberLookupLoading ? "Checking..." : "Add person"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-on-surface-variant">CashFlow does not expose a browsable member directory.</p>
+                {memberLookupError && <p className="text-[12px] text-error">{memberLookupError}</p>}
+                {selectedMembers.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {selectedMembers.map((member, index) => (
                       <button
-                        key={user.id}
-                        onClick={() => toggleMember(user.id)}
-                        className={`chip ${selectedMembers.includes(user.id) ? "chip-active" : ""}`}
+                        type="button"
+                        key={member.id}
+                        onClick={() => setSelectedMembers((current) => current.filter((item) => item.id !== member.id))}
+                        className="chip chip-active"
+                        aria-label={`Remove ${member.name}`}
                       >
-                        <span className={`avatar avatar-sm avatar-${userList.indexOf(user) % 6} !w-5 !h-5 !text-[9px]`}>
-                          {getInitials(user.name)}
-                        </span>
-                        {user.name}
-                        {selectedMembers.includes(user.id) && (
-                          <span className="material-symbols-outlined text-[14px]">check</span>
-                        )}
+                        <span className={`avatar avatar-sm avatar-${index % 6} !h-5 !w-5 !text-[9px]`}>{getInitials(member.name)}</span>
+                        {member.name}
+                        <span className="material-symbols-outlined text-[14px]">close</span>
                       </button>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               <div className="flex flex-col sm:flex-row gap-3 mt-1">
                 <button

@@ -9,6 +9,8 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import type { ServerToClientEvents, ClientToServerEvents } from "../types/api.js";
+import { authService } from "../services/authService.js";
+import { groupService } from "../services/groupService.js";
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -36,17 +38,49 @@ export function initSocketServer(httpServer: HttpServer): TypedServer {
     });
   }
 
+  // Authenticate every socket during the handshake. A connection is scoped to
+  // the short-lived access token and is disconnected when that token expires.
+  io.use((socket, next) => {
+    try {
+      const token = socket.handshake.auth?.token;
+      if (typeof token !== "string" || !token) throw new Error("Missing access token");
+
+      const payload = authService.verifyAccessToken(token);
+      socket.data.userId = payload.sub;
+      socket.data.userEmail = payload.email;
+      socket.data.authExpiresAt = payload.exp ? payload.exp * 1000 : Date.now();
+      next();
+    } catch {
+      next(new Error("Authentication required"));
+    }
+  });
+
   // ── Connection Handler ───────────────────────
   io.on("connection", (socket: TypedSocket) => {
     console.log(`[SOCKET] Client connected: ${socket.id}`);
 
+    const expiresIn = Math.max(0, Number(socket.data.authExpiresAt) - Date.now());
+    const expiryTimer = setTimeout(() => socket.disconnect(true), expiresIn);
+
     // Join a group room
-    socket.on("group:join", (groupId: string) => {
+    socket.on("group:join", async (groupId: string) => {
       const room = `group:${groupId}`;
       if (socket.rooms.has(room)) return;
 
-      socket.join(room);
-      console.log(`[SOCKET] ${socket.id} joined ${room}`);
+      try {
+        await groupService.requireRole(
+          groupId,
+          socket.data.userId,
+          ["ADMIN", "MEMBER", "AUDITOR"]
+        );
+        await socket.join(room);
+        console.log(`[SOCKET] ${socket.id} joined ${room}`);
+      } catch {
+        socket.emit("group:error", {
+          code: "FORBIDDEN",
+          message: "You do not have access to this group",
+        });
+      }
     });
 
     // Leave a group room
@@ -60,6 +94,7 @@ export function initSocketServer(httpServer: HttpServer): TypedServer {
     });
 
     socket.on("disconnect", (reason) => {
+      clearTimeout(expiryTimer);
       console.log(`[SOCKET] Client disconnected: ${socket.id} (${reason})`);
     });
   });
@@ -83,7 +118,7 @@ async function setupRedisAdapter(server: TypedServer): Promise<void> {
     // Required by @socket.io/redis-adapter
     maxRetriesPerRequest: null,
     // Enable TLS for Upstash (rediss:// protocol)
-    ...(useTls ? { tls: { rejectUnauthorized: false } } : {}),
+    ...(useTls ? { tls: {} } : {}),
     // Connection resilience
     connectTimeout: 10000,
     enableReadyCheck: false,

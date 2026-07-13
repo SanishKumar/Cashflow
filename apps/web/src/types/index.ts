@@ -75,6 +75,24 @@ export interface GroupBalances {
   };
 }
 
+export type SettlementPaymentStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "CANCELLED";
+
+export interface SettlementPayment {
+  id: string;
+  groupId: string;
+  fromUserId: string;
+  toUserId: string;
+  fromUser: { id: string; name: string; email: string };
+  toUser: { id: string; name: string; email: string };
+  amount: number;
+  currency: string;
+  status: SettlementPaymentStatus;
+  note: string | null;
+  decisionNote: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
 export interface AuditLogEntry {
   id: string;
   userId: string;
@@ -97,15 +115,48 @@ export interface PendingSettlementGroup {
   pendingCount: number;
 }
 
+export interface DashboardGroupPreview {
+  id: string;
+  name: string;
+  description: string | null;
+  currency: string;
+  memberCount: number;
+  expenseCount: number;
+}
+
+export interface DashboardSettlementAction {
+  groupId: string;
+  groupName: string;
+  currency: string;
+  fromUserId: string;
+  fromName: string;
+  toUserId: string;
+  toName: string;
+  amount: number;
+  state: "OPEN" | "PENDING_CONFIRMATION";
+}
+
+export interface DashboardPendingConfirmation {
+  id: string;
+  groupId: string;
+  groupName: string;
+  fromUserId: string;
+  fromName: string;
+  amount: number;
+  currency: string;
+  createdAt: string;
+}
+
 export interface DashboardStats {
   totalGroups: number;
   totalTransactions: number;
-  totalVolume: number;
   pendingSettlements: number;
   pendingGroups: PendingSettlementGroup[];
-  netPosition: number;
+  groups: DashboardGroupPreview[];
+  outgoingSettlements: DashboardSettlementAction[];
+  incomingSettlements: DashboardSettlementAction[];
+  pendingConfirmations: DashboardPendingConfirmation[];
   recentActivity: AuditLogEntry[];
-  monthlyVolume: MonthlyVolume[];
 }
 
 export interface ReceiptItem {
@@ -125,7 +176,6 @@ export interface ReceiptData {
   category: string;
   items: ReceiptItem[];
   confidence: number;
-  rawText: string;
 }
 
 export interface ApiResponse<T = unknown> {

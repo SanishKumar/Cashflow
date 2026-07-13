@@ -14,6 +14,7 @@ import { Router } from "express";
 import { auditLogService } from "../services/auditLogService.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
+import { groupService } from "../services/groupService.js";
 import type { AuditAction } from "@prisma/client";
 
 const router = Router();
@@ -46,6 +47,11 @@ router.get(
 router.get(
   "/group/:groupId",
   asyncHandler(async (req, res) => {
+    await groupService.requireRole(
+      req.params.groupId as string,
+      req.userId!,
+      ["ADMIN", "MEMBER", "AUDITOR"]
+    );
     const options = parseQueryOptions(req.query);
     const result = await auditLogService.findByGroup(
       req.params.groupId as string,

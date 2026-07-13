@@ -19,39 +19,36 @@ const SAFE_USER_SELECT = {
   updatedAt: true,
 } as const;
 
-export class UserService {
-  /**
-   * Get all users (safe fields only).
-   */
-  async findAll() {
-    return prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      select: SAFE_USER_SELECT,
-    });
-  }
+const INVITE_USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  avatarUrl: true,
+} as const;
 
-  /**
-   * Get a user by ID with their group memberships.
-   */
-  async findById(id: string) {
+export class UserService {
+  /** Look up a single account for an explicit group invitation. */
+  async findByEmail(email: string) {
     const user = await prisma.user.findUnique({
-      where: { id },
-      select: {
-        ...SAFE_USER_SELECT,
-        memberships: {
-          include: {
-            group: {
-              select: { id: true, name: true },
-            },
-          },
-        },
-      },
+      where: { email: email.toLowerCase().trim() },
+      select: INVITE_USER_SELECT,
     });
 
     if (!user) {
-      throw new NotFoundError("User", id);
+      throw new NotFoundError("Account");
     }
 
+    return user;
+  }
+
+  /** Get the authenticated account without exposing memberships. */
+  async findById(id: string) {
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: SAFE_USER_SELECT,
+    });
+
+    if (!user) throw new NotFoundError("User", id);
     return user;
   }
 
