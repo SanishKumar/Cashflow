@@ -112,7 +112,7 @@ export function DashboardPage() {
         </section>
 
         <div className="mt-5 flex items-start gap-2 rounded-2xl border border-outline-variant/70 bg-surface-container-low px-4 py-3 text-[11px] leading-5 text-on-surface-variant">
-          <span className="material-symbols-outlined mt-0.5 text-[16px] text-primary">account_balance_off</span>
+          <span className="material-symbols-outlined mt-0.5 text-[16px] text-primary" aria-hidden="true">info</span>
           <p>CashFlow records shared expenses and payment confirmations. It does not connect to a bank or transfer money.</p>
         </div>
       </div>
