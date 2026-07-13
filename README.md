@@ -1,207 +1,91 @@
-# CashFlow (public beta)
+# CashFlow
 
-🚀 **Live Demo:** [https://cashflow-phi-amber.vercel.app/](https://cashflow-phi-amber.vercel.app/)
+CashFlow helps a group finish the awkward part of shared expenses: deciding who should pay whom after the trip, household bill, or event is over.
 
-> An open-source group-expense tracker that turns net balances into a clear settlement plan.
+[Open the app](https://cashflow-phi-amber.vercel.app/) · [Try the private demo](https://cashflow-phi-amber.vercel.app/demo) · [Read the security model](SECURITY.md) · [Read the privacy notice](PRIVACY.md)
 
-> **Beta notice:** CashFlow is still under active development. Do not use it for sensitive or real-world financial data until the security and privacy documentation is complete.
+The demo needs no account. It uses fictional people, keeps all changes in that browser tab, and sends no demo expenses to the API.
 
-## Key Features
+## What it does
 
-- **Exact settlement for typical groups**: Finds the mathematically minimum number of payments when there are up to 12 people with non-zero balances.
-- **Safe large-group fallback**: Uses a deterministic greedy algorithm for larger groups; it settles every balance in at most `N - 1` payments without claiming global optimality.
-- **C++ → WebAssembly in production**: The container build compiles the settlement solver from C++ source, then the Node.js server executes that module. TypeScript mirrors the algorithm as a development fallback.
-- **Accounts and roles**: JWT-based authentication, refresh-token rotation, and `ADMIN`, `MEMBER`, and read-only `AUDITOR` group roles.
-- **Group tools**: Expense entry, settlement views, CSV/PDF exports, activity logs, and an interactive debt graph.
-- **Receipt assistance**: Optional OCR receipt parsing with a local fallback. See the privacy documentation before enabling third-party OCR for real data.
-- **Multi-currency input**: Converts supported currencies through Frankfurter when an expense is added.
+- Records expenses, payers, and per-person shares inside a group.
+- Builds a settlement plan that tells each person exactly whom to pay.
+- Keeps payment confirmations separate from expenses: the sender marks a payment as sent and the recipient confirms or rejects it.
+- Gives each user an actionable dashboard for payments to send and payments to confirm.
+- Supports admin, member, and read-only auditor roles.
+- Provides group activity history, CSV/PDF exports, optional receipt OCR, and live group updates.
+- Keeps each group in one base currency while preserving conversion details for expenses entered in another supported currency.
 
-## Screenshots
-| | |
-|:---:|:---:|
-| <img src="docs/screenshots/dashboard.png" alt="Dashboard View" /> <br/> **Dashboard View** | <img src="docs/screenshots/graph.png" alt="Interactive Debt Graph" /> <br/> **Interactive Debt Graph** |
-| <img src="docs/screenshots/ocr-modal.png" alt="Receipt Scanning" /> <br/> **Receipt Scanning** | <img src="docs/screenshots/ledger.png" alt="Global Ledger" /> <br/> **Global Ledger** |
+CashFlow records what happened; it does not connect to a bank, hold funds, or transfer money.
 
-## Architecture
+## How settlement calculation is described
 
-```mermaid
-graph TD
-    subgraph Client["Client Tier (React + Vite)"]
-        UI["Tailwind CSS v4\nGlassmorphic UI"]
-        WS_C["Socket.io Client"]
-        Graph["React Flow\nInteractive Network"]
-    end
+The solver works with integer cents and reports the strategy it used.
 
-    subgraph Security["Security & Routing Tier"]
-        Rate["Redis Rate Limiter\n(express-rate-limit)"]
-        Auth["Stateless JWT +\nPostgres Sessions"]
-        RBAC["Role-Based Access Control"]
-    end
+- With at most 12 people who have a non-zero balance, it searches for a plan with the minimum number of payments for that balance state.
+- Above that limit, it uses a deterministic greedy fallback. The result still settles every balance, but it is not claimed to be globally minimal.
 
-    subgraph Server["API Tier (Express + Node.js)"]
-        API["REST API\nExpress Router"]
-        WS_S["Socket.io Server"]
-        Audit["Structured Audit Logger"]
-        Export["Export Service\n(CSV + PDF)"]
-        Solver["C++ → WASM\nSettlement Solver"]
-        Cur["Frankfurter API\nCurrency Converter"]
-    end
+The normal Node/Render build runs the tested TypeScript solver. The repository also contains a matching C++ implementation that the Docker image can compile to WebAssembly. WASM is an optional runtime engine, not a requirement and not a claim about the current hosted deployment.
 
-    subgraph Data["Data Tier"]
-        DB[(Neon PostgreSQL\nServerless DB)]
-        ORM["Prisma ORM"]
-        Redis[("Upstash Redis\nPub/Sub & Limit Store")]
-    end
+## Current status
 
-    %% Connections
-    UI <--> |Requests| Rate
-    Rate --> Security
-    Security --> API
-    
-    Graph <--> |Live Sync| WS_C
-    WS_C <--> |WebSockets| WS_S
-    
-    API <--> |Queries| ORM
-    Audit -.-> |Logs| ORM
-    
-    WS_S <--> |Broadcasts| Redis
-    Rate <--> |Limits| Redis
-    
-    API --> |Currency Swap| Cur
-    API <--> |Data Prep| Solver
-    API --> |Generates| Export
-    
-    ORM <--> |Connection Pool| DB
-    
-    classDef default fill:#1e1e2e,stroke:#89b4fa,stroke-width:2px,color:#cdd6f4;
-    classDef database fill:#181825,stroke:#f38ba8,stroke-width:2px,color:#cdd6f4;
-    classDef security fill:#313244,stroke:#f38ba8,stroke-width:2px,color:#cdd6f4;
-    classDef algorithm fill:#313244,stroke:#a6e3a1,stroke-width:2px,color:#cdd6f4;
-    
-    class DB,Redis database;
-    class Rate,Auth,RBAC security;
-    class Solver algorithm;
-```
+This is a public beta. Authentication, group authorization, settlement confirmation, fixed-point money storage, upload validation, and private session handling are implemented and tested. The remaining limitations are listed openly in [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
 
-## Tech Stack
+Do not enter data you would be uncomfortable storing in a hosted PostgreSQL database. In particular, receipt OCR can send an image to OCR.space after explicit consent.
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 19, Vite 6, Tailwind CSS v4, React Flow |
-| Backend | Node.js, Express 5, TypeScript, Socket.io |
-| Algorithm | C++ (Graph Optimizer) → WebAssembly via Emscripten |
-| Database | Neon (Serverless PostgreSQL) + Prisma ORM |
-| Real-Time | Socket.io + Redis Pub/Sub (Upstash) |
-| DevOps | Docker, Docker Compose |
+## Run it locally
 
-## Quick Start
-
-### Prerequisites
-- Node.js ≥ 20
-- [Neon](https://neon.tech) account (free — serverless PostgreSQL)
-- [Upstash](https://upstash.com) account (free — serverless Redis)
-
-### Infrastructure Setup
-
-1. **Neon PostgreSQL**: Create a project → copy the connection string. Add `&connect_timeout=30&pool_timeout=30` to prevent serverless cold-start errors.
-2. **Upstash Redis**: Create a database → copy the `rediss://` connection URL (TLS)
-3. Copy `.env.example` → `apps/server/.env` and fill in your credentials. Receipt scanning uses `OCR_SPACE_API_KEY`; set `PREMIUM_RECEIPT_USER_IDS` to a comma-separated list of user IDs that should bypass the free 20 scans/hour limit.
-
-### Local Development
+Requirements: Node.js 20 or newer, PostgreSQL, and Redis.
 
 ```bash
-# 1. Clone and install
 npm install
-
-# 2. Set up environment (fill in Neon + Upstash credentials, plus OCR_SPACE_API_KEY for receipt scanning)
 cp .env.example apps/server/.env
+npm run db:migrate:deploy
+npm run db:seed
+```
 
-# 3. Push database schema to Neon
-cd apps/server && npx prisma db push && cd ../..
+Fill in `DATABASE_URL`, `REDIS_URL`, and a random `JWT_SECRET` of at least 32 characters before starting the server. `OCR_SPACE_API_KEY` is optional.
 
-# 4. Seed demo data
-cd apps/server && npx tsx src/prisma/seed.ts && cd ../..
+Run the two applications in separate terminals:
 
-# 5. Start backend
+```bash
 npm run dev:server
-
-# 6. Start frontend (new terminal)
 npm run dev:web
 ```
 
-### Docker Compose (Full Stack)
+The frontend is at `http://localhost:5173`; the API is at `http://localhost:4000`. If port 4000 is already in use, stop the existing Node process or set a different `PORT` in `apps/server/.env`.
+
+## Verify a change
 
 ```bash
-docker compose up --build
+npm test --workspace=apps/server
+npm test --workspace=apps/web
+npm run build:server
+npm run build:web
 ```
 
-- Frontend: http://localhost:3000 (Docker) / http://localhost:5173 (dev)
-- Backend: http://localhost:4000
-- API Health: http://localhost:4000/api/health
+The server tests may need `npx vitest run --configLoader runner` on Windows environments where Vitest's default config loader cannot start a child process.
 
+## Deploy
 
-## Core Algorithm
+The hosted setup uses Vercel for the frontend and Render for the API. The production API is reverse-proxied through `/api` on Vercel so the refresh cookie remains first-party; Socket.io still connects directly to Render with a short-lived access token.
 
-CashFlow first converts every expense into a net balance for each group member. Settlement is then calculated in integer cents, so floating-point noise does not influence the plan.
+Read [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) before deploying. Database migrations are required for the fixed-point money columns and settlement-payment workflow.
 
-1. For **up to 12 non-zero balances**, the solver exhaustively searches maximal debtor/creditor pairings and returns a plan with the mathematically minimum number of payments.
-2. For **more than 12 non-zero balances**, it uses a deterministic greedy matcher. That plan is valid and uses at most `N - 1` payments, but it is not described as globally minimal.
-3. Production containers compile and run the same strategy in C++/WebAssembly. The TypeScript implementation is a behavior-matched fallback for local development or a failed WASM load.
+## Repository layout
 
-The 12-person exact limit is intentional: finding a global minimum is computationally expensive at arbitrary scale. The response includes the strategy used so the application can present it honestly.
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Server health check (DB ping included) |
-| POST | `/api/auth/register` | Register user (Rate limited) |
-| POST | `/api/auth/login` | Login & receive JWT |
-| POST | `/api/auth/logout` | Revoke DB Session |
-| POST/GET | `/api/users` | User CRUD |
-| POST/GET | `/api/groups` | Group CRUD (Cursor paginated) |
-| POST/DELETE | `/api/groups/:id/members` | Member management (ADMIN only) |
-| PATCH | `/api/groups/:id/members/:userId/role` | Change member role |
-| POST/GET | `/api/groups/:id/transactions` | Transaction CRUD (Paginated) |
-| GET | `/api/groups/:id/settlements` | Compute minimized debts |
-| GET | `/api/groups/:id/exports/csv` | Download CSV Ledger |
-| GET | `/api/groups/:id/exports/pdf` | Download PDF Summary |
-| GET | `/api/audit-logs` | Paginated activity logs for the authenticated user's groups |
-
-## Project Structure
-
+```text
+apps/web/                  React and Vite frontend
+apps/server/               Express API, Prisma schema, and tests
+apps/server/prisma/        Versioned PostgreSQL migrations
+packages/solver/           Optional C++/WebAssembly solver
+docs/                      Deployment notes and screenshots
 ```
-CashFlow-Management/
-├── apps/
-│   ├── web/                 # React + Vite frontend
-│   │   ├── src/
-│   │   │   ├── components/  # Sidebar, Layout, DebtGraph, ExpenseModal
-│   │   │   ├── pages/       # GroupsPage, GroupDetailPage
-│   │   │   ├── hooks/       # useApi, useSocket
-│   │   │   ├── lib/         # API client, Socket client
-│   │   │   └── types/       # TypeScript interfaces
-│   │   └── Dockerfile
-│   │
-│   └── server/              # Express + TypeScript backend
-│       ├── src/
-│       │   ├── routes/      # users, groups, transactions
-│       │   ├── services/    # Business logic + solver
-│       │   ├── middleware/  # Validation, error handling
-│       │   ├── socket/      # Socket.io server
-│       │   ├── wasm/        # WASM loader bridge
-│       │   └── prisma/      # Schema + seed
-│       └── Dockerfile
-│
-├── packages/
-│   └── solver/              # C++ → WebAssembly solver
-│       ├── src/solver.cpp
-│       ├── CMakeLists.txt
-│       └── build.sh
-│
-├── docker-compose.yml
-└── package.json
-```
+
+## Contributing
+
+A useful issue includes the route or screen, what you expected, what happened, and a small reproduction. For security reports, do not open a public issue; follow [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)

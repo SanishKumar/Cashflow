@@ -34,8 +34,8 @@ const debugSocket = import.meta.env.VITE_DEBUG_SOCKET === "true";
 
 export function getSocket(): TypedSocket {
   if (!socket) {
-    const API_URL = import.meta.env.VITE_API_URL || undefined;
-    socket = io(API_URL, {
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL || undefined;
+    socket = io(socketUrl, {
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 10,

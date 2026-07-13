@@ -23,7 +23,10 @@ import type {
   LedgerTransactionSummary,
 } from "../types/index";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
+// Production API traffic stays on the Vercel origin and is reverse-proxied to
+// Render. This keeps the HttpOnly refresh cookie first-party. VITE_API_URL is
+// still used by the Socket.io client for its direct realtime connection.
+const API_URL = import.meta.env.PROD ? "" : (import.meta.env.VITE_API_URL || "");
 const BASE_URL = `${API_URL}/api`;
 
 // In-memory token storage (not persisted — refresh token handles persistence)

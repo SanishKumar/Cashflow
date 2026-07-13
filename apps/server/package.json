@@ -1,6 +1,6 @@
 {
   "name": "@cashflow/server",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx src/prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate"

@@ -58,26 +58,50 @@ if (process.env.NODE_ENV === "production") {
   app.use(morgan("dev"));
 }
 
-// Health Check (public)
-app.get("/api/health", async (_req, res) => {
-  let dbStatus = "unknown";
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    dbStatus = "connected";
-  } catch (err) {
-    dbStatus = "disconnected";
-  }
+// Authenticated API responses must never be cached by a reverse proxy or CDN.
+app.use("/api", (_req, res, next) => {
+  res.setHeader("Cache-Control", "private, no-store");
+  next();
+});
 
+// Lightweight liveness check for hosts that probe the service root.
+app.get("/", (_req, res) => {
   res.json({
     success: true,
     data: {
-      status: "healthy",
-      database: dbStatus,
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      version: "3.0.0",
+      service: "CashFlow API",
+      status: "ok",
+      health: "/api/health",
     },
   });
+});
+
+// Readiness check (public). A disconnected database must not be reported healthy.
+app.get("/api/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({
+      success: true,
+      data: {
+        status: "healthy",
+        database: "connected",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        version: "2.0.0",
+      },
+    });
+  } catch {
+    res.status(503).json({
+      success: false,
+      data: {
+        status: "unhealthy",
+        database: "disconnected",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        version: "2.0.0",
+      },
+    });
+  }
 });
 
 // Apply rate limiting to all API routes

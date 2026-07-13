@@ -15,8 +15,7 @@ build/
 .env.*.local
 !.env.example
 
-# Database
-prisma/migrations/
+# Prisma migration history is source code and must be committed.
 
 # IDE
 .vscode/

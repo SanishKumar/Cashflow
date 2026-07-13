@@ -15,7 +15,7 @@ function getInitials(name: string): string {
 function formatCurrency(amount: number, currencyCode: string = "USD"): string {
   try {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode }).format(Math.abs(amount));
-  } catch (e) {
+  } catch {
     return `$${Math.abs(amount).toFixed(2)}`;
   }
 }
@@ -75,10 +75,10 @@ export function LedgerPage() {
         <div>
           <p className="mb-1 hidden text-[10px] font-bold uppercase tracking-[0.14em] text-primary md:block">Your records</p>
           <h2 className="text-[22px] font-bold tracking-tight text-on-surface md:text-[24px]">Ledger & activity</h2>
-          <p className="mt-0.5 max-w-xl text-[11px] leading-relaxed text-on-surface-variant md:mt-1 md:text-[12px]">Every expense, status change, and group update in one timeline.</p>
-          {allTransactions.length > 0 && (
+          <p className="mt-0.5 max-w-xl text-[11px] leading-relaxed text-on-surface-variant md:mt-1 md:text-[12px]">Expenses and group activity, kept in one place.</p>
+          {recordCount > 0 && (
             <span className="mt-1.5 inline-flex rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary md:mt-2">
-              {allTransactions.length} records
+              {recordCount} {recordCount === 1 ? "record" : "records"}
             </span>
           )}
         </div>
@@ -108,26 +108,35 @@ export function LedgerPage() {
         </div>
       </header>
 
-      {/* Summary Cards */}
-      <div className="grid shrink-0 grid-cols-3 gap-2 px-4 pb-3 md:gap-4 md:px-8 md:pb-5">
-        <div className="min-w-0 rounded-2xl border border-outline-variant/70 bg-surface-container p-3 shadow-[0_8px_20px_rgba(31,35,54,0.04)] md:p-3.5">
-          <span className="text-[10px] font-semibold text-on-surface-variant"><span className="md:hidden">Tracked</span><span className="hidden md:inline">Tracked spending</span></span>
-          <div className="mt-1 whitespace-nowrap text-[clamp(0.94rem,4.4vw,1.25rem)] font-bold leading-none tracking-tight tabular-nums text-secondary">{formatCurrency(totalVolume)}</div>
-        </div>
-        <div className="min-w-0 rounded-2xl border border-outline-variant/70 bg-surface-container p-3 shadow-[0_8px_20px_rgba(31,35,54,0.04)] md:p-3.5">
-          <span className="text-[10px] font-semibold text-on-surface-variant">Expenses</span>
-          <div className="mt-1 text-[20px] font-bold leading-none tracking-tight text-on-surface">{allTransactions.length}</div>
-        </div>
-        <div className="min-w-0 rounded-2xl border border-outline-variant/70 bg-surface-container p-3 shadow-[0_8px_20px_rgba(31,35,54,0.04)] md:p-3.5">
-          <span className="text-[10px] font-semibold text-on-surface-variant">Groups</span>
-          <div className="mt-1 text-[20px] font-bold leading-none tracking-tight text-on-surface">{groups?.length ?? 0}</div>
-        </div>
-      </div>
-
       {/* Content */}
       <div className="mobile-scroll-safe flex-1 overflow-auto px-4 pb-6 md:px-8 md:pb-8">
         {tab === "transactions" ? (
-          <TransactionsView transactions={allTransactions} loading={isLoading} />
+          <>
+            <TransactionsView transactions={allTransactions} loading={txLoading} />
+            {!txLoading && (transactionData?.totalPages ?? 0) > 1 && (
+              <nav className="mt-4 flex items-center justify-center gap-3" aria-label="Ledger pages">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page <= 1}
+                  className="rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-[12px] font-semibold text-on-surface transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="text-[11px] font-medium tabular-nums text-on-surface-variant">
+                  Page {transactionData?.page ?? page} of {transactionData?.totalPages ?? 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(transactionData?.totalPages ?? current, current + 1))}
+                  disabled={page >= (transactionData?.totalPages ?? 1)}
+                  className="rounded-lg border border-outline-variant bg-surface-container px-3 py-2 text-[12px] font-semibold text-on-surface transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </nav>
+            )}
+          </>
         ) : (
           <AuditLogView logs={auditData?.items ?? []} loading={auditLoading} />
         )}
@@ -138,7 +147,7 @@ export function LedgerPage() {
 
 // ── Transactions View ──────────────────────────
 
-function TransactionsView({ transactions, loading }: { transactions: (Transaction & { groupName: string; groupCurrency: string })[]; loading: boolean }) {
+function TransactionsView({ transactions, loading }: { transactions: LedgerTransactionSummary[]; loading: boolean }) {
   if (loading) {
     return (
       <div className="flex flex-col gap-2 mt-4">
@@ -184,7 +193,6 @@ function TransactionsView({ transactions, loading }: { transactions: (Transactio
           </div>
           <div className="col-span-4 text-[13px] font-medium text-on-surface truncate">
             {tx.description}
-            {tx.status && <span className={`ml-2 text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wider ${tx.status === 'COMPLETED' ? 'bg-positive/20 text-positive' : tx.status === 'PENDING' ? 'bg-warning/20 text-warning' : 'bg-error/20 text-error'}`}>{tx.status}</span>}
           </div>
           <div className="col-span-2">
             <span className="text-[11px] text-primary bg-glow-primary px-2 py-0.5 rounded-full font-medium truncate inline-block max-w-full">
@@ -216,11 +224,6 @@ function TransactionsView({ transactions, loading }: { transactions: (Transactio
                 {tx.description}
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {tx.status && (
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wider ${tx.status === 'COMPLETED' ? 'bg-positive/20 text-positive' : tx.status === 'PENDING' ? 'bg-warning/20 text-warning' : 'bg-error/20 text-error'}`}>
-                    {tx.status}
-                  </span>
-                )}
                 <span className="text-[10px] text-primary bg-glow-primary px-2 py-0.5 rounded-full font-medium">
                   {tx.groupName}
                 </span>

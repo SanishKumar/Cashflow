@@ -123,7 +123,7 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
       target: s.to,
       animated: true,
       label: new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(s.amount),
-      labelStyle: { fill: "var(--color-on-surface)", fontFamily: "JetBrains Mono", fontSize: 11, fontWeight: 600 },
+      labelStyle: { fill: "var(--color-on-surface)", fontFamily: "ui-monospace, Cascadia Code, Consolas, monospace", fontSize: 11, fontWeight: 600 },
       labelBgStyle: { fill: "var(--color-surface-container)", stroke: "var(--color-outline-variant)", strokeWidth: 1, rx: 6, ry: 6 },
       labelBgPadding: [8, 4] as [number, number],
       style: { stroke: s.amount > 500 ? "var(--color-tertiary)" : "var(--color-primary)", strokeWidth: Math.max(1.5, Math.min(3, s.amount / 300)) },
