@@ -75,6 +75,17 @@ export interface GroupBalances {
   };
 }
 
+export interface LedgerTransactionSummary {
+  id: string;
+  groupId: string;
+  groupName: string;
+  groupCurrency: string;
+  amount: number;
+  description: string;
+  createdAt: string;
+  paidBy: { id: string; name: string };
+}
+
 export type SettlementPaymentStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "CANCELLED";
 
 export interface SettlementPayment {

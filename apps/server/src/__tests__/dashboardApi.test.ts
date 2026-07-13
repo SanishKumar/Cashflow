@@ -84,7 +84,7 @@ describe("Dashboard API", () => {
       ]);
       expect(response.body.data).toHaveProperty("recentActivity");
       expect(response.body.data.recentActivity).toHaveLength(1);
-      expect(response.body.data.monthlyVolume).toBeDefined();
+      expect(response.body.data.monthlyVolume).toBeUndefined();
       expect(response.body.data.totalVolume).toBeUndefined();
       expect(response.body.data.groups).toHaveLength(2);
       expect(response.body.data.outgoingSettlements[0]).toMatchObject({

@@ -115,6 +115,13 @@ export function LoginPage() {
           Shared expenses, clearly settled
         </p>
 
+        <div className="mb-5 flex w-full items-start gap-2.5 rounded-2xl border border-outline-variant/70 bg-surface-container p-3 text-left">
+          <span className="material-symbols-outlined mt-0.5 text-[17px] text-primary">shield_lock</span>
+          <p className="text-[11px] leading-5 text-on-surface-variant">
+            <span className="font-bold text-on-surface">No bank connection.</span> CashFlow records shared expenses and confirmations; it never moves your money.
+          </p>
+        </div>
+
         {/* Tab Switcher */}
         <div className="w-full flex gap-1 bg-surface-variant/30 rounded-lg p-1 mb-6">
           <button
@@ -304,9 +311,9 @@ export function LoginPage() {
         <div className="w-full mt-6 pt-5 border-t border-outline-variant/50">
           <Link to="/demo" className="btn-secondary h-11 w-full">
             <span className="material-symbols-outlined text-[17px]">explore</span>
-            Explore the demo workspace
+            Try the private 60-second demo
           </Link>
-          <p className="mt-2 text-center text-[10px] text-on-surface-variant">Private sample data in this tab. No account needed.</p>
+          <p className="mt-2 text-center text-[10px] text-on-surface-variant">Runs entirely in this tab. Nothing is saved and no account is needed.</p>
         </div>
       </div>
     </div>

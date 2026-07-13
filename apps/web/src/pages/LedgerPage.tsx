@@ -3,9 +3,10 @@
 // ──────────────────────────────────────────────
 
 import { useSearchParams } from "react-router-dom";
+import { useState } from "react";
 import { useApi } from "../hooks/useApi";
-import { groupApi, transactionApi, auditLogApi } from "../lib/api";
-import type { Group, Transaction, AuditLogEntry } from "../types/index";
+import { ledgerApi, auditLogApi } from "../lib/api";
+import type { LedgerTransactionSummary, AuditLogEntry } from "../types/index";
 
 function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -36,53 +37,36 @@ const ACTION_ICONS: Record<string, { icon: string; color: string }> = {
   SETTLEMENT_CANCELLED: { icon: "block", color: "text-on-surface-variant" },
 };
 
-interface GroupWithTransactions {
-  group: Group;
-  transactions: Transaction[];
-}
-
 type Tab = "transactions" | "audit";
 
 export function LedgerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [page, setPage] = useState(1);
   const tab: Tab = searchParams.get("tab") === "activity" ? "audit" : "transactions";
-  const { data: groups, loading } = useApi<Group[]>(() => groupApi.list());
 
   const selectTab = (nextTab: Tab) => {
     const nextParams = new URLSearchParams(searchParams);
     if (nextTab === "audit") nextParams.set("tab", "activity");
     else nextParams.delete("tab");
+    setPage(1);
     setSearchParams(nextParams, { replace: true });
   };
 
-  const groupIds = groups?.map((g) => g.id) ?? [];
-  const { data: allGroupsTx, loading: txLoading } = useApi<GroupWithTransactions[]>(
-    async () => {
-      if (groupIds.length === 0) return [];
-      const results = await Promise.all(
-        groupIds.map(async (gid) => {
-          const group = groups!.find((g) => g.id === gid)!;
-          const transactions = await transactionApi.list(gid);
-          return { group, transactions };
-        })
-      );
-      return results;
-    },
-    [groupIds.join(",")]
+  const emptyTransactions = { items: [] as LedgerTransactionSummary[], total: 0, page: 1, limit: 50, totalPages: 0 };
+  const { data: transactionData, loading: txLoading } = useApi(
+    () => tab === "transactions" ? ledgerApi.transactions(page) : Promise.resolve(emptyTransactions),
+    [tab, page]
   );
 
   const { data: auditData, loading: auditLoading } = useApi<{ items: AuditLogEntry[]; total: number; page: number; totalPages: number; }>(
-    () => auditLogApi.list()
+    () => tab === "audit"
+      ? auditLogApi.list()
+      : Promise.resolve({ items: [], total: 0, page: 1, totalPages: 0 }),
+    [tab]
   );
 
-  const allTransactions = (allGroupsTx ?? [])
-    .flatMap((gwt) =>
-      gwt.transactions.map((tx) => ({ ...tx, groupName: gwt.group.name, groupId: gwt.group.id, groupCurrency: gwt.group.currency }))
-    )
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  const totalVolume = allTransactions.reduce((sum, tx) => sum + tx.amount, 0);
-  const isLoading = loading || txLoading;
+  const allTransactions = transactionData?.items ?? [];
+  const recordCount = tab === "transactions" ? transactionData?.total ?? 0 : auditData?.total ?? 0;
 
   return (
     <div className="h-full flex flex-col">

@@ -20,6 +20,7 @@ import type {
   DashboardStats,
   ReceiptData,
   SettlementPayment,
+  LedgerTransactionSummary,
 } from "../types/index";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -418,5 +419,12 @@ export const exportApi = {
 // Dashboard API
 export const dashboardApi = {
   getStats: () => request<DashboardStats>("/dashboard/stats"),
+};
+
+export const ledgerApi = {
+  transactions: (page: number = 1, limit: number = 50) =>
+    request<{ items: LedgerTransactionSummary[]; total: number; page: number; limit: number; totalPages: number }>(
+      `/ledger/transactions?page=${page}&limit=${limit}`
+    ),
 };
 
