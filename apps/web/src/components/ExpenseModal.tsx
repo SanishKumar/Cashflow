@@ -23,6 +23,14 @@ function formatCategory(category: string): string {
   return category.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function formatCurrency(amount: number, currency: string): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
 function confidenceLabel(confidence: number): { label: string; className: string } {
   if (confidence >= 0.85) return { label: "High confidence", className: "text-secondary bg-secondary/10 border-secondary/20" };
   if (confidence >= 0.6) return { label: "Medium confidence", className: "text-warning bg-warning/10 border-warning/20" };
@@ -310,7 +318,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
               <label className="text-label">Amount</label>
               <div className="relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-[14px] font-medium">
-                  {new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(0).replace(/\d|\.|\,/g, '').trim()}
+                  {new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(0).replace(/[\d.,]/g, '').trim()}
                 </span>
                 <input
                   className="input-field input-field-mono !pl-8"
@@ -379,7 +387,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
               <div className={`text-[12px] font-medium ${isBalanced ? "text-secondary" : Math.abs(remaining) > 0.01 ? "text-warning" : "text-on-surface-variant"}`}>
                 {isBalanced
                   ? "✓ Amounts balanced"
-                  : `$${remaining.toFixed(2)} remaining to allocate`}
+                  : `${formatCurrency(remaining, currency)} remaining to allocate`}
               </div>
               <button onClick={distributeEvenly} className="btn-ghost text-[11px] text-primary">
                 Split evenly
@@ -438,7 +446,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
                       />
                     ) : (
                       <span className="text-data text-on-surface">
-                        {isSelected && share ? `$${share.amount.toFixed(2)}` : "—"}
+                        {isSelected && share ? formatCurrency(share.amount, currency) : "—"}
                       </span>
                     )}
                   </div>
@@ -458,7 +466,7 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
           <div className="flex items-center gap-4">
             <div className="text-right">
               <div className="text-[11px] text-on-surface-variant">Total</div>
-              <div className="text-data-lg text-on-surface">${parsedAmount.toFixed(2)}</div>
+              <div className="text-data-lg text-on-surface">{formatCurrency(parsedAmount, currency)}</div>
             </div>
             <button onClick={handleSubmit} disabled={!canSubmit || submitting} className="btn-primary">
               {submitting ? "Adding..." : "Add Expense"}

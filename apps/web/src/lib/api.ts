@@ -98,6 +98,17 @@ async function tryRefresh(): Promise<User | null> {
   }
 }
 
+export async function refreshAccessToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = tryRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+
+  const refreshedUser = await refreshPromise;
+  return refreshedUser ? accessToken : null;
+}
+
 /**
  * Core request function with auth header injection and auto-refresh.
  */
@@ -122,14 +133,7 @@ async function request<T>(
 
   // Handle 401: try refreshing the token once
   if (response.status === 401 && retryOnAuth) {
-    if (!refreshPromise) {
-      refreshPromise = tryRefresh().finally(() => {
-        refreshPromise = null;
-      });
-    }
-
-    const refreshedUser = await refreshPromise;
-    if (refreshedUser) {
+    if (await refreshAccessToken()) {
       // Retry the original request with the new token (no more retries)
       return request<T>(url, options, false);
     }
@@ -163,12 +167,7 @@ async function upload<T>(url: string, formData: FormData, retryOnAuth = true): P
   });
 
   if (response.status === 401 && retryOnAuth) {
-    if (!refreshPromise) {
-      refreshPromise = tryRefresh().finally(() => {
-        refreshPromise = null;
-      });
-    }
-    if (await refreshPromise) return upload<T>(url, formData, false);
+    if (await refreshAccessToken()) return upload<T>(url, formData, false);
 
     clearAuth();
     if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {

@@ -113,7 +113,7 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
         currency,
       },
     })),
-    [members, getPos, netExposure]
+    [members, getPos, netExposure, currency]
   );
 
   const builtEdges: Edge[] = useMemo(() =>
@@ -129,7 +129,7 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
       style: { stroke: s.amount > 500 ? "var(--color-tertiary)" : "var(--color-primary)", strokeWidth: Math.max(1.5, Math.min(3, s.amount / 300)) },
       markerEnd: { type: MarkerType.ArrowClosed, color: s.amount > 500 ? "var(--color-tertiary)" : "var(--color-primary)", width: 18, height: 18 },
     })),
-    [settlements]
+    [settlements, currency]
   );
 
   // FIX: Sync state when props change — useNodesState initial value is only read once

@@ -3,6 +3,7 @@
 // ──────────────────────────────────────────────
 
 import prisma from "../lib/prisma.js";
+import { Prisma } from "@prisma/client";
 import type { CreateGroupInput, UpdateGroupInput } from "../types/api.js";
 import { NotFoundError, ConflictError, AuthorizationError } from "../lib/errors.js";
 import { auditLogService } from "./auditLogService.js";
@@ -163,22 +164,37 @@ export class GroupService {
    * Remove a member from a group. ADMIN can remove anyone; members can leave themselves.
    */
   async removeMember(groupId: string, userId: string, requestingUserId?: string) {
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId, groupId } },
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      const membership = await tx.groupMember.findUnique({
+        where: { userId_groupId: { userId, groupId } },
+      });
 
-    if (!membership) {
-      throw new NotFoundError("Group membership");
-    }
+      if (!membership) {
+        throw new NotFoundError("Group membership");
+      }
 
-    // If not self-leave, require ADMIN
-    if (requestingUserId && requestingUserId !== userId) {
-      await this.requireRole(groupId, requestingUserId, "ADMIN");
-    }
+      if (requestingUserId && requestingUserId !== userId) {
+        const requester = await tx.groupMember.findUnique({
+          where: { userId_groupId: { userId: requestingUserId, groupId } },
+        });
+        if (!requester || requester.role !== "ADMIN") {
+          throw new AuthorizationError("This operation requires ADMIN role");
+        }
+      }
 
-    const result = await prisma.groupMember.delete({
-      where: { id: membership.id },
-    });
+      if (membership.role === "ADMIN") {
+        const adminCount = await tx.groupMember.count({
+          where: { groupId, role: "ADMIN" },
+        });
+        if (adminCount <= 1) {
+          throw new AuthorizationError(
+            "Assign another admin before removing the group's only admin"
+          );
+        }
+      }
+
+      return tx.groupMember.delete({ where: { id: membership.id } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     // Audit log
     if (requestingUserId) {

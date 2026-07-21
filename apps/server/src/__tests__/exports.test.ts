@@ -61,7 +61,7 @@ describe("ExportService", () => {
       const result = await exportService.generateLedgerCSV("group-1");
 
       expect(result.content.charCodeAt(0)).toBe(0xfeff);
-      expect(result.content).toContain("Date,Description,Paid By,Amount,Currency,Status,Split Between");
+      expect(result.content).toContain("Date,Description,Paid By,Amount,Currency,Original Amount,Original Currency,Exchange Rate,Status,Split Between");
       expect(result.content).toContain("Lunch");
       expect(result.content).toContain("Alice");
       expect(result.content).toContain("25.50");
@@ -81,6 +81,22 @@ describe("ExportService", () => {
 
       const result = await exportService.generateLedgerCSV("group-1");
       expect(result.content).toContain('"Dinner at ""Joe\'s, Place"""');
+    });
+
+    it("exports converted and original currency values without mislabelling either amount", async () => {
+      mockPrisma.group.findUnique.mockResolvedValue({
+        id: "group-1", name: "Test Group", currency: "USD",
+      });
+      mockPrisma.transaction.findMany.mockResolvedValue([{
+        id: "tx-1", description: "Dinner in Paris", amount: 110,
+        createdAt: new Date("2026-06-15"), status: "COMPLETED",
+        originalCurrency: "EUR", exchangeRate: 1.1,
+        paidBy: { name: "Alice" }, debtShares: [],
+      }]);
+
+      const result = await exportService.generateLedgerCSV("group-1");
+
+      expect(result.content).toContain("110.00,USD,100.00,EUR,1.100000,COMPLETED");
     });
 
     it("throws NotFoundError for non-existent group", async () => {

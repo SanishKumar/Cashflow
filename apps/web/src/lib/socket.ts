@@ -7,7 +7,7 @@
 
 import { io, Socket } from "socket.io-client";
 import type { Settlement, Transaction } from "../types/index";
-import { getAccessToken } from "./api";
+import { getAccessToken, refreshAccessToken } from "./api";
 
 interface ServerToClientEvents {
   "transaction:created": (data: {
@@ -30,7 +30,23 @@ interface ClientToServerEvents {
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 let socket: TypedSocket | null = null;
+let refreshingSocketToken = false;
 const debugSocket = import.meta.env.VITE_DEBUG_SOCKET === "true";
+
+async function reconnectWithFreshToken(): Promise<void> {
+  if (!socket || socket.connected || refreshingSocketToken) return;
+
+  refreshingSocketToken = true;
+  try {
+    const token = await refreshAccessToken();
+    if (token && socket && !socket.connected) {
+      socket.auth = { token };
+      socket.connect();
+    }
+  } finally {
+    refreshingSocketToken = false;
+  }
+}
 
 export function getSocket(): TypedSocket {
   if (!socket) {
@@ -52,9 +68,20 @@ export function getSocket(): TypedSocket {
 
     socket.on("disconnect", (reason) => {
       if (debugSocket) console.log("[WS] Disconnected:", reason);
+      if (reason === "io server disconnect") {
+        void reconnectWithFreshToken();
+      }
+    });
+
+    socket.on("connect_error", (error) => {
+      if (debugSocket) console.log("[WS] Connection error:", error.message);
+      if (error.message === "Authentication required") {
+        void reconnectWithFreshToken();
+      }
     });
   } else if (!socket.connected) {
     socket.auth = { token: getAccessToken() };
+    socket.connect();
   }
 
   return socket;

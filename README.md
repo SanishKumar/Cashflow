@@ -1,91 +1,131 @@
 # CashFlow
 
-CashFlow helps a group finish the awkward part of shared expenses: deciding who should pay whom after the trip, household bill, or event is over.
+[![CI](https://github.com/SanishKumar/Cashflow/actions/workflows/ci.yml/badge.svg)](https://github.com/SanishKumar/Cashflow/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-6d4aff.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](package.json)
 
-[Open the app](https://cashflow-phi-amber.vercel.app/) · [Try the private demo](https://cashflow-phi-amber.vercel.app/demo) · [Read the security model](SECURITY.md) · [Read the privacy notice](PRIVACY.md)
+CashFlow is a full-stack shared-expense app built around one simple idea: marking a payment as sent is not the same as the other person receiving it.
 
-The demo needs no account. It uses fictional people, keeps all changes in that browser tab, and sends no demo expenses to the API.
+Along with splitting expenses and calculating a compact settlement plan, CashFlow gives payments a small workflow of their own. A sender records the payment, the recipient confirms or rejects it, and the group keeps a useful history of what happened.
 
-## What it does
+[Try the live demo](https://cashflow-phi-amber.vercel.app/demo) · [Open the app](https://cashflow-phi-amber.vercel.app/) · [Security](SECURITY.md) · [Privacy](PRIVACY.md)
 
-- Records expenses, payers, and per-person shares inside a group.
-- Builds a settlement plan that tells each person exactly whom to pay.
-- Keeps payment confirmations separate from expenses: the sender marks a payment as sent and the recipient confirms or rejects it.
-- Gives each user an actionable dashboard for payments to send and payments to confirm.
-- Supports admin, member, and read-only auditor roles.
-- Provides group activity history, CSV/PDF exports, optional receipt OCR, and live group updates.
-- Keeps each group in one base currency while preserving conversion details for expenses entered in another supported currency.
+The demo is the quickest way in. It uses fictional trip data, needs no account, and resets when the tab is refreshed.
 
-CashFlow records what happened; it does not connect to a bank, hold funds, or transfer money.
+## A look at the app
 
-## How settlement calculation is described
+### The settlement desk
 
-The solver works with integer cents and reports the strategy it used.
+The dashboard brings together payments to send, payments waiting for confirmation, group balances, and recent activity.
 
-- With at most 12 people who have a non-zero balance, it searches for a plan with the minimum number of payments for that balance state.
-- Above that limit, it uses a deterministic greedy fallback. The result still settles every balance, but it is not claimed to be globally minimal.
+![CashFlow dashboard showing settlement actions and active groups](docs/screenshots/dashboard_new.png)
 
-The normal Node/Render build runs the tested TypeScript solver. The repository also contains a matching C++ implementation that the Docker image can compile to WebAssembly. WASM is an optional runtime engine, not a requirement and not a claim about the current hosted deployment.
+### Group ledger
 
-## Current status
+The ledger keeps expenses and settlement history readable without losing who initiated each entry.
 
-This is a public beta. Authentication, group authorization, settlement confirmation, fixed-point money storage, upload validation, and private session handling are implemented and tested. The remaining limitations are listed openly in [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
+![CashFlow group ledger in dark mode](docs/screenshots/image.png)
 
-Do not enter data you would be uncomfortable storing in a hosted PostgreSQL database. In particular, receipt OCR can send an image to OCR.space after explicit consent.
+## What makes it interesting
 
-## Run it locally
+- **Recipient-confirmed settlements.** A payment affects balances only after the named recipient confirms it. Senders can cancel pending claims; recipients can reject incorrect ones.
+- **A solver with an explicit contract.** Money is converted to integer cents. Typical groups with up to 12 non-zero balances use an exact minimum-transaction search; larger groups use a deterministic greedy fallback.
+- **Server-enforced roles.** Admins manage a group, members add expenses and settle balances, and auditors get read-only access.
+- **An authorization-scoped audit trail.** Group, expense, role, and settlement events are recorded without exposing activity across groups.
+- **Fixed-point financial data.** PostgreSQL decimal columns and cent-based calculations avoid floating-point drift in stored balances.
+- **Short-lived browser sessions.** Access tokens live in memory, refresh tokens are hashed, rotated, and delivered through secure HTTP-only cookies.
+- **Realtime group updates.** Socket.io rooms are authenticated and membership-checked before clients can subscribe.
+- **Receipt-assisted entry.** Uploaded images are validated, processed in memory, and sent to the external OCR provider only after explicit consent.
+- **Practical exports.** CSV ledgers preserve base-currency and original-currency values separately; settlement plans can be exported as PDF.
 
-Requirements: Node.js 20 or newer, PostgreSQL, and Redis.
+CashFlow records shared expenses and payment confirmations. It does not connect to bank accounts or move money.
+
+## Settlement lifecycle
+
+```text
+Expense added
+      ↓
+Balances recalculated
+      ↓
+Settlement plan generated
+      ↓
+Sender marks payment as sent
+      ↓
+Recipient confirms ─── or ─── rejects
+      ↓
+Confirmed payment updates the ledger
+```
+
+Settlement decisions use optimistic concurrency on the server, so two confirmation requests cannot complete the same pending payment twice.
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Web | React 19, TypeScript, Vite, Tailwind CSS |
+| API | Express 5, TypeScript, Zod |
+| Data | PostgreSQL, Prisma |
+| Realtime | Socket.io, Redis pub/sub |
+| Auth | Rotating refresh sessions, bcrypt, JWT |
+| Solver | TypeScript with an optional C++/WebAssembly implementation |
+| Testing | Vitest, Testing Library, Supertest |
+| Hosting | Vercel frontend, Render API |
+
+## Run locally
+
+You will need Node.js 20+, PostgreSQL, and Redis.
 
 ```bash
+git clone https://github.com/SanishKumar/Cashflow.git
+cd Cashflow
 npm install
 cp .env.example apps/server/.env
+```
+
+Set `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, and `CORS_ORIGIN` in `apps/server/.env`, then prepare the database:
+
+```bash
 npm run db:migrate:deploy
 npm run db:seed
 ```
 
-Fill in `DATABASE_URL`, `REDIS_URL`, and a random `JWT_SECRET` of at least 32 characters before starting the server. `OCR_SPACE_API_KEY` is optional.
-
-Run the two applications in separate terminals:
+Start the API and web app in separate terminals:
 
 ```bash
 npm run dev:server
 npm run dev:web
 ```
 
-The frontend is at `http://localhost:5173`; the API is at `http://localhost:4000`. If port 4000 is already in use, stop the existing Node process or set a different `PORT` in `apps/server/.env`.
+The frontend runs on `http://localhost:5173`; the API runs on `http://localhost:4000`.
 
-## Verify a change
+## Verify the repository
+
+The same command runs locally and in GitHub Actions:
 
 ```bash
-npm test --workspace=apps/server
-npm test --workspace=apps/web
-npm run build:server
-npm run build:web
+npm run verify
 ```
 
-The server tests may need `npx vitest run --configLoader runner` on Windows environments where Vitest's default config loader cannot start a child process.
+It runs ESLint, both test suites, the server TypeScript build, and the production Vite build. Production dependencies are also audited in CI.
 
-## Deploy
-
-The hosted setup uses Vercel for the frontend and Render for the API. The production API is reverse-proxied through `/api` on Vercel so the refresh cookie remains first-party; Socket.io still connects directly to Render with a short-lived access token.
-
-Read [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) before deploying. Database migrations are required for the fixed-point money columns and settlement-payment workflow.
-
-## Repository layout
+## Repository map
 
 ```text
-apps/web/                  React and Vite frontend
-apps/server/               Express API, Prisma schema, and tests
-apps/server/prisma/        Versioned PostgreSQL migrations
-packages/solver/           Optional C++/WebAssembly solver
-docs/                      Deployment notes and screenshots
+apps/web/              React application and component tests
+apps/server/           Express API, services, socket server, and API tests
+apps/server/prisma/    Prisma schema and versioned PostgreSQL migrations
+packages/solver/       Optional C++/WebAssembly settlement solver
+docs/                  Deployment notes and product screenshots
 ```
 
-## Contributing
+If you are reviewing the project, good starting points are the [settlement-payment service](apps/server/src/services/settlementPaymentService.ts), [solver](apps/server/src/services/solver.ts), [Socket.io authorization](apps/server/src/socket/socketServer.ts), and [security model](SECURITY.md).
 
-A useful issue includes the route or screen, what you expected, what happened, and a small reproduction. For security reports, do not open a public issue; follow [SECURITY.md](SECURITY.md).
+## Deployment
+
+The hosted version uses Vercel for the frontend and Render for the API. HTTP API traffic is reverse-proxied through the Vercel origin so the refresh cookie remains first-party, while Socket.io connects directly with a short-lived access token.
+
+The complete release checklist is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## License
 
-[MIT](LICENSE)
+Released under the [MIT License](LICENSE).

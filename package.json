@@ -2,16 +2,23 @@
   "name": "cashflow-management",
   "version": "2.0.0",
   "private": true,
-  "description": "Open-source group-expense tracker with exact settlement for typical groups",
+  "type": "module",
+  "description": "Verified group-expense settlements with recipient confirmation and exact balancing",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
+    "build": "npm run build:server && npm run build:web",
     "dev:server": "npm run dev --workspace=apps/server",
     "dev:web": "npm run dev --workspace=apps/web",
     "build:server": "npm run build --workspace=apps/server",
     "build:web": "npm run build --workspace=apps/web",
+    "lint": "eslint apps/server/src apps/web/src",
+    "test": "npm run test:server && npm run test:web",
+    "test:server": "npm test --workspace=apps/server -- --configLoader runner",
+    "test:web": "npm test --workspace=apps/web",
+    "verify": "npm run lint && npm run test && npm run build",
     "build:render": "npm run db:generate --workspace=apps/server && npm run db:migrate:deploy --workspace=apps/server && npm run build:server",
     "db:push": "npm run db:push --workspace=apps/server",
     "db:migrate": "npm run db:migrate --workspace=apps/server",
@@ -21,5 +28,12 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "typescript-eslint": "^8.46.0"
   }
 }

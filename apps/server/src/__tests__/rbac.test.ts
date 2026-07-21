@@ -22,6 +22,9 @@ const { mockPrisma } = vi.hoisted(() => ({
       findMany: vi.fn(),
       count: vi.fn(),
     },
+    user: {
+      findUnique: vi.fn(),
+    },
     auditLog: {
       create: vi.fn(),
     },
@@ -131,6 +134,55 @@ describe("GroupService RBAC", () => {
       await expect(
         groupService.changeRole("group-1", "nonexistent", "MEMBER", "admin-1")
       ).rejects.toThrow();
+    });
+  });
+
+  describe("removeMember", () => {
+    it("does not allow a non-admin to remove another member", async () => {
+      mockPrisma.groupMember.findUnique
+        .mockResolvedValueOnce({
+          id: "m-target", userId: "member-2", groupId: "group-1", role: "MEMBER",
+        })
+        .mockResolvedValueOnce({
+          id: "m-requester", userId: "member-1", groupId: "group-1", role: "MEMBER",
+        });
+
+      await expect(
+        groupService.removeMember("group-1", "member-2", "member-1")
+      ).rejects.toThrow("requires ADMIN");
+
+      expect(mockPrisma.groupMember.delete).not.toHaveBeenCalled();
+    });
+
+    it("does not allow the only admin to leave and orphan the group", async () => {
+      mockPrisma.groupMember.findUnique.mockResolvedValue({
+        id: "m-admin", userId: "admin-1", groupId: "group-1", role: "ADMIN",
+      });
+      mockPrisma.groupMember.count.mockResolvedValue(1);
+
+      await expect(
+        groupService.removeMember("group-1", "admin-1", "admin-1")
+      ).rejects.toThrow("Assign another admin");
+
+      expect(mockPrisma.groupMember.delete).not.toHaveBeenCalled();
+    });
+
+    it("allows an admin to leave after another admin has been assigned", async () => {
+      mockPrisma.groupMember.findUnique.mockResolvedValue({
+        id: "m-admin", userId: "admin-1", groupId: "group-1", role: "ADMIN",
+      });
+      mockPrisma.groupMember.count.mockResolvedValue(2);
+      mockPrisma.groupMember.delete.mockResolvedValue({ id: "m-admin" });
+      mockPrisma.user.findUnique.mockResolvedValue({ name: "Admin" });
+
+      await expect(
+        groupService.removeMember("group-1", "admin-1", "admin-1")
+      ).resolves.toEqual({ id: "m-admin" });
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledWith(
+        expect.any(Function),
+        { isolationLevel: "Serializable" }
+      );
     });
   });
 });

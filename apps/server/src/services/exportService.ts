@@ -23,6 +23,10 @@ function csvEscape(value: string): string {
   return value;
 }
 
+function decimalToNumber(value: number | { toString(): string }): number {
+  return typeof value === "number" ? value : Number(value.toString());
+}
+
 export class ExportService {
   /**
    * Generate a CSV of all transactions for a group.
@@ -43,16 +47,38 @@ export class ExportService {
       },
     });
 
-    const headers = ["Date", "Description", "Paid By", "Amount", "Currency", "Status", "Split Between"];
-    const rows: string[][] = transactions.map((t) => [
-      new Date(t.createdAt).toISOString().split("T")[0],
-      t.description,
-      t.paidBy.name,
-      t.amount.toFixed(2),
-      t.originalCurrency || group.currency,
-      t.status,
-      t.debtShares.map((s) => `${s.owedBy.name}: ${s.amount.toFixed(2)}`).join("; "),
-    ]);
+    const headers = [
+      "Date",
+      "Description",
+      "Paid By",
+      "Amount",
+      "Currency",
+      "Original Amount",
+      "Original Currency",
+      "Exchange Rate",
+      "Status",
+      "Split Between",
+    ];
+    const rows: string[][] = transactions.map((t) => {
+      const amount = decimalToNumber(t.amount);
+      const exchangeRate = t.exchangeRate ? decimalToNumber(t.exchangeRate) : null;
+      const originalAmount = t.originalCurrency && exchangeRate
+        ? amount / exchangeRate
+        : null;
+
+      return [
+        new Date(t.createdAt).toISOString().split("T")[0],
+        t.description,
+        t.paidBy.name,
+        amount.toFixed(2),
+        group.currency,
+        originalAmount?.toFixed(2) ?? "",
+        t.originalCurrency ?? "",
+        exchangeRate?.toFixed(6) ?? "",
+        t.status,
+        t.debtShares.map((s) => `${s.owedBy.name}: ${s.amount.toFixed(2)}`).join("; "),
+      ];
+    });
 
     // BOM for Excel UTF-8 compatibility
     const BOM = "\uFEFF";

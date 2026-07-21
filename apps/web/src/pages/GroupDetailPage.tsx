@@ -30,7 +30,7 @@ function getInitials(name: string): string {
 function formatCurrency(amount: number, currencyCode: string = "USD"): string {
   try {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode }).format(amount);
-  } catch (e) {
+  } catch {
     return `$${amount.toFixed(2)}`;
   }
 }
