@@ -93,8 +93,8 @@ export function LoginPage() {
     return (
       <div className="h-[100dvh] w-full bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-container to-[#5133db] flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-[24px] animate-spin">sync</span>
+          <div className="w-12 h-12 rounded-[12px] bg-surface flex items-center justify-center" style={{ boxShadow: "rgb(202, 211, 210) 0 0 0 1px inset" }}>
+            <span className="material-symbols-outlined text-on-surface text-[24px] animate-spin">sync</span>
           </div>
           <p className="text-[13px] text-on-surface-variant font-medium">Restoring session...</p>
         </div>
@@ -106,13 +106,13 @@ export function LoginPage() {
     <div className="h-[100dvh] w-full bg-background flex items-center justify-center overflow-auto">
       <div className="w-full max-w-[420px] px-4 py-6 sm:px-6 sm:py-12 flex flex-col items-center animate-fade-in">
         {/* Logo */}
-        <BrandMark className="mb-6 h-14 w-14 drop-shadow-[0_12px_20px_rgba(105,71,244,0.24)]" title="CashFlow" />
+        <BrandMark className="mb-6 h-14 w-14 text-on-surface" title="CashFlow" />
 
         <h1 className="text-[28px] font-bold text-on-surface tracking-tight mb-1">
           CashFlow
         </h1>
         <p className="text-[14px] text-on-surface-variant mb-8">
-          Shared expenses, clearly settled
+          Untangle who owes whom
         </p>
 
         <div className="mb-5 flex w-full items-start gap-2.5 rounded-2xl border border-outline-variant/70 bg-surface-container p-3 text-left">
@@ -309,11 +309,11 @@ export function LoginPage() {
         )}
 
         <div className="w-full mt-6 pt-5 border-t border-outline-variant/50">
-          <Link to="/demo" className="btn-secondary h-11 w-full">
+          <Link to="/" className="btn-secondary h-11 w-full">
             <span className="material-symbols-outlined text-[17px]">explore</span>
-            Try the private 60-second demo
+            Explore a sample network first
           </Link>
-          <p className="mt-2 text-center text-[10px] text-on-surface-variant">Runs entirely in this tab. Nothing is saved and no account is needed.</p>
+          <p className="mt-2 text-center text-[10px] text-on-surface-variant">No account needed. Clearing runs entirely in your browser.</p>
         </div>
       </div>
     </div>

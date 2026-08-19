@@ -17,9 +17,10 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@cashflow/clearing": ["../../packages/clearing/src/index.ts"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "../../packages/clearing/src"],
   "exclude": ["src/**/*.test.tsx", "src/**/*.test.ts", "src/__tests__"]
 }

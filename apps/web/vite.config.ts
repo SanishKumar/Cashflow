@@ -14,10 +14,18 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
+      // The clearing engine is plain dependency-free TypeScript, so it is
+      // aliased to source rather than pre-bundled. That keeps it running in the
+      // browser with no server round trip.
+      "@cashflow/clearing": resolve(__dirname, "../../packages/clearing/src/index.ts"),
     },
   },
   server: {
     port: 5173,
+    fs: {
+      // Serving from a sibling workspace package requires opting the repo root in.
+      allow: [resolve(__dirname, "../..")],
+    },
     proxy: {
       "/api": {
         target: "http://localhost:4000",
