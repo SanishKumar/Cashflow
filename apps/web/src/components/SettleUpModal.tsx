@@ -129,7 +129,7 @@ export function SettleUpModal({
                           className={`flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border px-3 text-[12px] font-bold transition-colors ${
                             pending
                               ? "cursor-default border-warning/20 bg-warning/10 text-warning"
-                              : "border-primary/25 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                              : "border-primary/25 bg-primary/10 text-primary hover:bg-primary hover:text-on-primary"
                           }`}
                         >
                           <span className="material-symbols-outlined text-[16px]">{pending ? "hourglass_top" : "outgoing_mail"}</span>

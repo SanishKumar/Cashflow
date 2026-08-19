@@ -39,7 +39,7 @@
   --color-on-primary-fixed: #09352e;
 
   /* ── Emerald: money owed to you ─────────── */
-  --color-secondary: #007010;
+  --color-secondary: #00650e;      /* darkened: #007010 was 4.41:1 on surface-dim */
   --color-secondary-container: #85c093;
   --color-secondary-fixed: #d7ead9;
   --color-on-secondary: #ffffff;
@@ -104,7 +104,7 @@
   --rule: 1px solid var(--color-outline-variant);
 
   /* Read by the graph canvas, which cannot see Tailwind classes. */
-  --graph-credit: #007010;
+  --graph-credit: #00650e;
   --graph-debit: #29211e;
   --graph-neutral: #6c7a79;
   --graph-edge: #09352e;

@@ -331,7 +331,7 @@ export function GroupDetailPage() {
               </div>
               <button 
                 onClick={() => setShowDeleteModal(true)} 
-                className="btn-secondary w-full !border-error/20 !text-error hover:!bg-error hover:!text-white transition-colors"
+                className="btn-secondary w-full !border-error/20 !text-error hover:!bg-error hover:!text-on-error transition-colors"
               >
                 <span className="material-symbols-outlined text-[16px]">delete</span>
                 Delete Group
@@ -378,7 +378,7 @@ export function GroupDetailPage() {
           type="button"
           onClick={() => setMobileActionsOpen((isOpen) => !isOpen)}
           aria-label={mobileActionsOpen ? "Close group actions" : "Open group actions"}
-          className="w-14 h-14 rounded-full bg-primary-container text-white shadow-lg shadow-primary/30 flex items-center justify-center transition-transform active:scale-95"
+          className="w-14 h-14 rounded-full bg-primary-container text-on-primary-container shadow-lg flex items-center justify-center transition-transform active:scale-95"
         >
           <span className="material-symbols-outlined text-[26px]">{mobileActionsOpen ? "close" : "add"}</span>
         </button>

@@ -91,7 +91,7 @@ export function DeleteGroupModal({ group, onClose }: DeleteGroupModalProps) {
           <button 
             onClick={handleDelete} 
             disabled={!isMatched || isDeleting}
-            className={`btn-primary ${!isMatched ? "opacity-50" : "bg-error hover:bg-error/90 text-white border-error/50"}`}
+            className={`btn-primary ${!isMatched ? "opacity-50" : "bg-error hover:bg-error/90 text-on-error border-error/50"}`}
           >
             {isDeleting ? "Deleting..." : "I understand, delete this group"}
           </button>

@@ -11,15 +11,6 @@ import type { Group, User } from "../types/index";
 
 type InviteUser = Pick<User, "id" | "name" | "email" | "avatarUrl">;
 
-const GROUP_ACCENTS = [
-  "from-violet-500 to-indigo-600",
-  "from-emerald-500 to-teal-600",
-  "from-amber-400 to-orange-500",
-  "from-rose-500 to-pink-600",
-  "from-cyan-500 to-blue-600",
-  "from-fuchsia-500 to-purple-600",
-];
-
 function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 }
@@ -169,7 +160,7 @@ export function GroupsPage() {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-label">Description <span className="text-outline">(optional)</span></label>
+                <label className="text-label">Description <span className="text-on-surface-variant">(optional)</span></label>
                 <input
                   className="input-field"
                   placeholder="What's this group for?"
@@ -195,7 +186,7 @@ export function GroupsPage() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <label className="text-label" htmlFor="member-email">Add members by exact email <span className="text-outline">(optional)</span></label>
+                <label className="text-label" htmlFor="member-email">Add members by exact email <span className="text-on-surface-variant">(optional)</span></label>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input
                     id="member-email"
@@ -295,7 +286,7 @@ export function GroupsPage() {
             {filteredGroups.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-16 h-16 rounded-2xl bg-surface-variant flex items-center justify-center">
-                  <span className="material-symbols-outlined text-outline text-[32px]">search_off</span>
+                  <span className="material-symbols-outlined text-on-surface-variant text-[32px]">search_off</span>
                 </div>
                 <p className="text-[14px] font-medium text-on-surface">
                   {searchQuery ? "No groups found" : "No groups yet"}
@@ -319,7 +310,7 @@ function GroupCard({ group, index, currentUserId }: { group: Group; index: numbe
   return (
     <Link to={`/groups/${group.id}`} className="group flex min-h-[190px] cursor-pointer flex-col rounded-[24px] border border-outline-variant/70 bg-surface-container p-5 shadow-[0_10px_28px_rgba(31,35,54,0.05)] transition-all duration-200 hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_18px_32px_rgba(31,35,54,0.1)]">
       <div className="flex items-start gap-3">
-        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${GROUP_ACCENTS[index % GROUP_ACCENTS.length]} text-[13px] font-bold text-white shadow-sm`}>
+        <div className="avatar avatar-md shrink-0">
           {getInitials(group.name)}
         </div>
         <div className="min-w-0 flex-1">
@@ -339,7 +330,7 @@ function GroupCard({ group, index, currentUserId }: { group: Group; index: numbe
             <p className="text-[12px] text-on-surface-variant mt-0.5 line-clamp-1">{group.description}</p>
           )}
         </div>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-outline transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-on-surface-variant transition-colors group-hover:bg-primary/10 group-hover:text-primary">
           <span className="material-symbols-outlined text-[17px]">arrow_forward</span>
         </span>
       </div>
