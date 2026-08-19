@@ -193,6 +193,9 @@ export function MoneyGraph({
     let asleep = false;
     // Frames of near-zero motion before physics is allowed to stop.
     let calmFrames = 0;
+    // Forces the physics pass to run even when the layout looks still, which
+    // is how a resized stage gets its nodes back on screen.
+    let settleFrames = 0;
 
     const wake = (): void => {
       calmFrames = 0;
@@ -209,12 +212,31 @@ export function MoneyGraph({
       const ratio = Math.min(window.devicePixelRatio || 1, 2);
       const width = parent.clientWidth;
       const height = parent.clientHeight;
+      if (width === 0 || height === 0) return;
+
+      const previous = sizeRef.current;
       sizeRef.current = { width, height };
+
       canvas.width = Math.floor(width * ratio);
       canvas.height = Math.floor(height * ratio);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+      if (previous.width > 0 && (previous.width !== width || previous.height !== height)) {
+        const shiftX = (width - previous.width) / 2;
+        const shiftY = (height - previous.height) / 2;
+
+        for (const node of nodesRef.current) {
+          if (Number.isNaN(node.x)) continue;
+          const margin = node.radius + 6;
+          node.x = Math.max(margin, Math.min(width - margin, node.x + shiftX));
+          node.y = Math.max(margin, Math.min(height - margin, node.y + shiftY));
+        }
+      }
+
+      settleFrames = 90;
+      wakeRef.current?.();
     };
 
     resize();
@@ -253,7 +275,8 @@ export function MoneyGraph({
       }
       for (const node of nodes) energy += 1 - node.alpha;
 
-      const stirring = energy > 0.05 || dragRef.current !== null;
+      if (settleFrames > 0) settleFrames -= 1;
+      const stirring = energy > 0.05 || dragRef.current !== null || settleFrames > 0;
       calmFrames = stirring ? 0 : calmFrames + 1;
 
       const span = Math.min(width, height);
