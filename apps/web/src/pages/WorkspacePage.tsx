@@ -12,7 +12,7 @@
  * and none of the numbers that give it meaning.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   buildGraph,
@@ -61,6 +61,21 @@ const MODES = [
   { id: "paths", label: "Simplify all", hint: "Fewest payments, may add strangers" },
 ] as const;
 
+interface ObligationResponse {
+  obligations: Array<{ from: string; to: string; amount: number }>;
+  members: Array<{ id: string; name: string }>;
+}
+
+/** Names read better on the graph than user ids, and stay stable as labels. */
+function toObligations(data: ObligationResponse): Obligation[] {
+  const names = new Map(data.members.map((member) => [member.id, member.name]));
+  return data.obligations.map((item) => ({
+    from: names.get(item.from) ?? item.from,
+    to: names.get(item.to) ?? item.to,
+    amount: item.amount,
+  }));
+}
+
 function pairsOf(obligations: readonly Obligation[]): Map<string, number> {
   const merged = new Map<string, number>();
   for (const { from, to, amount } of obligations) {
@@ -89,6 +104,9 @@ export function WorkspacePage() {
   const [groupId, setGroupId] = useState<string | null>(null);
   const [remote, setRemote] = useState<Obligation[] | null>(null);
   const [loading, setLoading] = useState(false);
+  // Obligations per group. Switching back to a group already seen should be
+  // instant rather than another round trip.
+  const cache = useRef(new Map<string, Obligation[]>());
   const [view, setView] = useState<ViewMode>("original");
   const [selected, setSelected] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>("engine");
@@ -103,6 +121,18 @@ export function WorkspacePage() {
         if (!active) return;
         setGroups(list);
         if (list.length > 0) setGroupId((current) => current ?? list[0]!.id);
+
+        for (const item of list) {
+          if (cache.current.has(item.id)) continue;
+          obligationApi
+            .get(item.id)
+            .then((data) => {
+              cache.current.set(item.id, toObligations(data));
+            })
+            .catch(() => {
+              // A failed warm-up just means that group loads on demand.
+            });
+        }
       })
       .catch(() => {
         // The sample network keeps the stage populated either way.
@@ -120,23 +150,25 @@ export function WorkspacePage() {
     }
 
     let active = true;
-    setLoading(true);
+
+    // Paint from cache immediately; the request below only refreshes it.
+    const cached = cache.current.get(groupId);
+    if (cached) {
+      setRemote(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
 
     obligationApi
       .get(groupId)
       .then((data) => {
-        if (!active) return;
-        const names = new Map(data.members.map((member) => [member.id, member.name]));
-        setRemote(
-          data.obligations.map((item) => ({
-            from: names.get(item.from) ?? item.from,
-            to: names.get(item.to) ?? item.to,
-            amount: item.amount,
-          }))
-        );
+        const next = toObligations(data);
+        cache.current.set(groupId, next);
+        if (active) setRemote(next);
       })
       .catch(() => {
-        if (active) setRemote(NO_OBLIGATIONS);
+        if (active && !cached) setRemote(NO_OBLIGATIONS);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -148,8 +180,8 @@ export function WorkspacePage() {
   }, [groupId]);
 
   const group = groups.find((item) => item.id === groupId);
-  const isSample = !currentUserId || remote === null;
-  const obligations = isSample ? SAMPLE : remote;
+  const isSample = !currentUserId;
+  const obligations = isSample ? SAMPLE : remote ?? NO_OBLIGATIONS;
   const money = useMoney(isSample ? "INR" : group?.currency ?? "USD");
 
   const analysis = useMemo(() => {
