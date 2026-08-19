@@ -298,7 +298,7 @@ export function GroupDetailPage() {
                         : "text-neutral"
                   }`}
                 >
-                  {balance.netBalance > 0.01 ? "+" : ""}{balance.netBalance < -0.01 ? "-" : ""}{formatCurrency(balance.netBalance)}
+                  {balance.netBalance > 0.01 ? "+" : ""}{formatCurrency(balance.netBalance)}
                 </span>
               </div>
             ))}
