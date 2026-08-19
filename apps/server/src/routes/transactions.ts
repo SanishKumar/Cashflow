@@ -103,4 +103,30 @@ router.get(
   })
 );
 
+// GET /api/groups/:groupId/obligations — Raw who-owes-whom, before any netting.
+// The clearing engine runs in the browser, so the server's job here is only to
+// state the facts it holds; the analysis happens client-side.
+router.get(
+  "/:groupId/obligations",
+  asyncHandler(async (req, res) => {
+    const graph = await transactionService.getObligationGraph(
+      req.params.groupId as string,
+      req.userId!
+    );
+
+    res.json({
+      success: true,
+      data: {
+        // Minor units keep the clearing arithmetic exact.
+        obligations: graph.edges.map((edge) => ({
+          from: edge.from,
+          to: edge.to,
+          amount: Math.round(edge.amount * 100),
+        })),
+        members: graph.members,
+      },
+    });
+  })
+);
+
 export default router;

@@ -217,8 +217,20 @@ export class TransactionService {
     return result;
   }
 
-  /** Compute a suggested settlement plan from expenses and confirmed payments. */
-  async getSettlements(groupId: string, requestingUserId?: string): Promise<GroupBalances> {
+  /**
+   * The raw obligation graph: one edge per expense share, plus a reverse edge
+   * for every confirmed payment. This is who actually owes whom, before any
+   * netting collapses it — which is the only form multilateral clearing can
+   * work on, because netting destroys the very relationships it operates on.
+   */
+  async getObligationGraph(
+    groupId: string,
+    requestingUserId?: string
+  ): Promise<{
+    edges: DebtEdge[];
+    userNames: Map<string, string>;
+    members: Array<{ id: string; name: string }>;
+  }> {
     if (requestingUserId) {
       await groupService.requireRole(groupId, requestingUserId, ["ADMIN", "MEMBER", "AUDITOR"]);
     }
@@ -286,23 +298,33 @@ export class TransactionService {
       });
     }
 
-    // Run the solver
+    return {
+      edges,
+      userNames,
+      members: group.members.map((member) => ({ id: member.user.id, name: member.user.name })),
+    };
+  }
+
+  /** Compute a suggested settlement plan from expenses and confirmed payments. */
+  async getSettlements(groupId: string, requestingUserId?: string): Promise<GroupBalances> {
+    const { edges, userNames, members } = await this.getObligationGraph(groupId, requestingUserId);
+
     const solver = await solveDebts(edges, userNames);
 
     // Compute per-user balances
     const balanceMap = new Map<string, number>();
-    for (const member of group.members) {
-      balanceMap.set(member.user.id, 0);
+    for (const member of members) {
+      balanceMap.set(member.id, 0);
     }
     for (const edge of edges) {
       balanceMap.set(edge.to, (balanceMap.get(edge.to) ?? 0) + edge.amount);
       balanceMap.set(edge.from, (balanceMap.get(edge.from) ?? 0) - edge.amount);
     }
 
-    const balances: UserBalance[] = group.members.map((m) => ({
-      userId: m.user.id,
-      name: m.user.name,
-      netBalance: Math.round((balanceMap.get(m.user.id) ?? 0) * 100) / 100,
+    const balances: UserBalance[] = members.map((member) => ({
+      userId: member.id,
+      name: member.name,
+      netBalance: Math.round((balanceMap.get(member.id) ?? 0) * 100) / 100,
     }));
 
     return {

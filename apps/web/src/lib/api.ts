@@ -328,6 +328,17 @@ export const settlementApi = {
     request<GroupBalances>(`/groups/${groupId}/settlements`),
 };
 
+export interface GroupObligations {
+  /** Amounts are integer minor units, ready for the clearing engine. */
+  obligations: Array<{ from: string; to: string; amount: number }>;
+  members: Array<{ id: string; name: string }>;
+}
+
+/** Who owes whom, before netting collapses it. */
+export const obligationApi = {
+  get: (groupId: string) => request<GroupObligations>(`/groups/${groupId}/obligations`),
+};
+
 export const settlementPaymentApi = {
   list: (groupId: string, status?: "PENDING" | "CONFIRMED" | "REJECTED" | "CANCELLED") =>
     request<SettlementPayment[]>(`/groups/${groupId}/settlement-payments${status ? `?status=${status}` : ""}`),
