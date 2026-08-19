@@ -3,7 +3,11 @@ interface BrandMarkProps {
   title?: string;
 }
 
-/** A small split-and-settle mark: one payment path cleanly becomes two. */
+/**
+ * One obligation path splitting into two, drawn as a plotted specimen: hairline
+ * strokes, a hollow plate, no fill of its own. Everything is currentColor so the
+ * mark inherits whatever ink it sits in.
+ */
 export function BrandMark({ className = "h-10 w-10", title }: BrandMarkProps) {
   return (
     <svg
@@ -14,18 +18,35 @@ export function BrandMark({ className = "h-10 w-10", title }: BrandMarkProps) {
       aria-label={title}
     >
       {title && <title>{title}</title>}
-      <defs>
-        <linearGradient id="cashflow-brand-gradient" x1="7" y1="5" x2="42" y2="44" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#8a70ff" />
-          <stop offset="0.52" stopColor="#6947f4" />
-          <stop offset="1" stopColor="#4324c8" />
-        </linearGradient>
-      </defs>
-      <rect x="3" y="3" width="42" height="42" rx="15" fill="url(#cashflow-brand-gradient)" />
-      <circle cx="14" cy="24" r="3.25" fill="white" />
-      <path d="M18 24h3.5c4.4 0 3.9-8 8.4-8h4" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" />
-      <path d="M18 24h3.5c4.4 0 3.9 8 8.4 8h4" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" />
-      <path d="m31 13 4 3-4 3M31 29l4 3-4 3" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <rect
+        x="3.5"
+        y="3.5"
+        width="41"
+        height="41"
+        rx="10"
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity="0.35"
+        strokeWidth="1.5"
+      />
+      <circle cx="15" cy="24" r="3" fill="currentColor" />
+      <path
+        d="M18 24h3.4c4.2 0 3.7-7.5 8-7.5h3.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M18 24h3.4c4.2 0 3.7 7.5 8 7.5h3.2"
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity="0.45"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <circle cx="33" cy="16.5" r="2.4" fill="currentColor" />
+      <circle cx="33" cy="31.5" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }

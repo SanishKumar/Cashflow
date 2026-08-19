@@ -165,8 +165,8 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
         {/* Header */}
         <div className="flex justify-between items-center px-4 md:px-6 py-4 border-b border-glass-border shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-container to-[#5133db] flex items-center justify-center">
-              <span className="material-symbols-outlined text-white text-[18px]">receipt_long</span>
+            <div className="w-9 h-9 rounded-[12px] bg-surface flex items-center justify-center" style={{ boxShadow: "rgb(202, 211, 210) 0 0 0 1px inset" }}>
+              <span className="material-symbols-outlined text-on-surface text-[18px]">receipt_long</span>
             </div>
             <div>
               <h2 className="text-[15px] font-semibold text-on-surface">Add Expense</h2>
