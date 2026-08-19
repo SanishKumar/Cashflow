@@ -1,43 +1,97 @@
+<div align="center">
+
 # CashFlow
 
+**Some of what your group owes runs in circles. It can be struck off without anyone paying.**
+
 [![CI](https://github.com/SanishKumar/Cashflow/actions/workflows/ci.yml/badge.svg)](https://github.com/SanishKumar/Cashflow/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-6d4aff.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-09352e.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-20%2B-00650e.svg)](package.json)
+[![Tests](https://img.shields.io/badge/tests-129%20passing-85c093.svg)](#verifying-the-repository)
 
-**Some debt cancels itself. The rest has to be paid.**
+[Live demo](https://cashflow-phi-amber.vercel.app/) · [How it works](#how-it-works) · [The engine](#the-clearing-engine) · [Run it locally](#run-it-locally)
 
-Where obligations form a loop — A owes B, B owes C, C owes A — they can be cancelled outright. Nobody's net position moves and nobody gains a counterparty. Going further clears far more, but only by making people owe strangers.
+</div>
 
-Every mainstream expense app ships one button that does the second thing silently. Splitwise's own documentation admits simplification "makes changes not only to your account, but also to the accounts of your friends — including balances that you can't see."
+![Eight IOUs between five people collapsing into four payments](docs/clearing.svg)
 
-CashFlow makes that a choice, measures what it costs, and shows you both answers.
+---
 
-[Clearing demo](https://cashflow-phi-amber.vercel.app/clearing) · [Expense demo](https://cashflow-phi-amber.vercel.app/demo) · [Open the app](https://cashflow-phi-amber.vercel.app/) · [Security](SECURITY.md) · [Privacy](PRIVACY.md)
+## The idea
 
-Both demos need no account and run on fictional data. The clearing demo runs the engine entirely in your browser — nothing is sent anywhere.
+Five friends, eight IOUs, ₹4,800 outstanding. But Priya owes Rahul, Rahul owes Sam, and Sam owes Priya — that loop is money chasing its own tail. It can be cancelled outright. Nobody pays anything, nobody's net position changes, and nobody ends up owing a stranger.
+
+Do that everywhere it occurs and ₹4,800 becomes ₹550 across four payments.
+
+Every expense app has a *simplify debts* button. It goes further than this — and to do it, it quietly makes people owe strangers. Splitwise's own documentation admits it "makes changes not only to your account, but also to the accounts of your friends — including balances that you can't see."
+
+CashFlow makes that a choice, shows what each option costs, and lets you take the safe one.
+
+|  | Cancel loops | Simplify all |
+| --- | --- | --- |
+| Clears | Closed loops only | Loops **and** open chains |
+| New counterparties | **Never any** | Yes — and it names them |
+| Net positions | Unchanged | Unchanged |
+
+## How it works
+
+**The graph is the interface.** There's no dashboard summarising a system you can't see — you land in the money graph itself. People are nodes, debts are edges, and money flows along them as you watch.
+
+- **Pick a mode.** *As owed* shows the tangle. *Cancel loops* is risk-free by construction. *Simplify all* is the aggressive option, with its cost stated up front.
+- **See what it costs.** Every mode reports how much cleared, how many payments remain, and exactly how many people would end up owing someone new.
+- **Instant.** The clearing engine runs in your browser, so switching modes never touches the server.
+- **Scan a receipt.** Photograph a bill and the items, total, tax and tip are read off it — with an honest score for how much of that the parser could actually verify.
+
+Everything else you'd expect is there: groups with roles, an audit trail, realtime updates, CSV and PDF export, multi-currency.
+
+> **CashFlow records who owes whom. It never connects to a bank or moves money.**
+
+<!--
+  TODO: demo recording.
+  Record at 1440x900, light theme, signed out so the sample network loads:
+    1. land on / with the tangled graph
+    2. click "Cancel loops" and let the edges dissolve
+    3. click "Simplify all" so the red new-counterparty edges appear
+    4. drag a node to show it is live
+  Save as docs/demo.gif and swap the SVG above for it.
+-->
 
 ## The clearing engine
 
-[`packages/clearing`](packages/clearing) is a standalone, dependency-free multilateral obligation-clearing engine. Two modes, both of which preserve every party's net position exactly:
-
-| Mode | What it does | New counterparties |
-| --- | --- | --- |
-| `cycles` | Cancels obligations only where they form a closed loop | **Never any** |
-| `paths` | Also lifts intermediaries out of open chains | Yes — and it reports which |
-
-Cycle-restricted clearing is a **maximum-circulation** problem. A flow that respects each obligation as a capacity and conserves value at every party cannot change anyone's net position — conservation *is* the safety guarantee — so maximising total flow maximises the obligation value that simply cancels. That is a minimum-cost circulation with a cost of −1 per unit, solved by saturating directed cycles and then cancelling negative-cost cycles in the residual until none remain, which is what makes the answer provably maximal.
+[`packages/clearing`](packages/clearing) is a standalone, dependency-free package. It is the reason this project exists.
 
 ```ts
 import { clear } from "@cashflow/clearing";
 
 const safe = clear(obligations, { mode: "cycles" });
-safe.metrics.noNewCounterparties; // always true
+safe.metrics.noNewCounterparties;  // always true
+safe.metrics.cleared;              // debt that evaporated
 
 const aggressive = clear(obligations, { mode: "paths" });
-aggressive.metrics.newPairs; // exactly who now owes someone new
+aggressive.metrics.newPairs;       // exactly who now owes someone new
 ```
 
 A party can also refuse one specific exposure without opting out of clearing, via `forbiddenPairs`.
+
+<details>
+<summary><b>How cycle clearing is solved</b></summary>
+
+<br>
+
+Cycle-restricted clearing is a **maximum-circulation** problem. A flow that respects every obligation as a capacity and conserves value at every party cannot change anyone's net position — conservation *is* the safety guarantee — so maximising total flow maximises the debt that simply cancels.
+
+That's a minimum-cost circulation with a cost of −1 per unit, solved in two phases:
+
+1. **Saturate directed cycles** by depth-first search. Cheap, and it recovers most of the value.
+2. **Cancel negative-cost cycles** in the residual network until none remain. A circulation is optimal exactly when its residual has no negative cycle, which is what makes the answer provably maximal.
+
+Phase two is queue-driven Bellman-Ford that catches a cycle the moment it forms, by checking whether a relaxation would close a loop in the predecessor tree. The textbook SPFA test — waiting for a relaxation counter to exceed the node count — measured about 25× slower here.
+
+Path compensation then lifts intermediaries out of open chains until nobody sits in the middle, which drives the total down to the **floor**: the sum of all positive net positions, the least any net-preserving method can leave outstanding.
+
+Amounts are integer minor units throughout. Clearing adds and subtracts these thousands of times, and floating point would let rounding error accumulate into the settlement instructions themselves.
+
+</details>
 
 ### What it clears
 
@@ -53,74 +107,17 @@ supply chain (8 tiers)       4966   46,821,748   20.41%  62.87%  0 / 2151
 regional supply chain        13935  122,584,346  22.88%  64.02%  0 / 6703
 ```
 
-Topology dominates the cycle figure. Real trade is largely hierarchical — a retailer owes a wholesaler owes a manufacturer — and a purely hierarchical network is acyclic, leaving loop-clearing nothing to cancel. The unstructured row is *not* representative; the supply-chain rows are. For reference, [arXiv 2606.26126](https://arxiv.org/abs/2606.26126) reports **20.99%** for cycle-restricted netting on a real corpus of 133,191 invoices worth €19.67bn, and the 8-tier network here independently lands at 20.41%.
+Two things worth reading carefully.
 
-The extra relief is bought with exposure: on the regional network, moving from `cycles` to `paths` clears an additional 41% — and creates **6,703 counterparty relationships that did not previously exist**.
+**Topology decides everything.** Real trade is hierarchical — a retailer owes a wholesaler owes a manufacturer — and a purely hierarchical network is acyclic, leaving loop clearing nothing to cancel. The unstructured row is *not* representative; the supply-chain rows are. [arXiv 2606.26126](https://arxiv.org/abs/2606.26126) reports **20.99%** for cycle-restricted netting across 133,191 real invoices worth €19.67bn, and the 8-tier network here independently lands at **20.41%**.
 
-This is not a toy problem. Slovenia's AJPES runs national multilateral set-off, clearing €683M in 2012 (1.89% of GDP) across 14,000 companies, and [the research on it](https://www.mdpi.com/1911-8074/13/12/295) shows demand rising counter-cyclically during liquidity crises.
+**The extra relief is bought with exposure.** On the regional network, moving from `cycles` to `paths` clears another 41% — and manufactures **6,703 counterparty relationships that did not previously exist**.
 
-## A look at the app
+This isn't a toy problem. Slovenia's AJPES runs national multilateral set-off, clearing €683M in 2012 — 1.89% of GDP — across 14,000 companies, with demand rising counter-cyclically during liquidity crises ([research](https://www.mdpi.com/1911-8074/13/12/295)).
 
-### The settlement desk
+## Run it locally
 
-The dashboard brings together payments to send, payments waiting for confirmation, group balances, and recent activity.
-
-![CashFlow dashboard showing settlement actions and active groups](docs/screenshots/dashboard_new.png)
-
-### Group ledger
-
-The ledger keeps expenses and settlement history readable without losing who initiated each entry.
-
-![CashFlow group ledger in dark mode](docs/screenshots/image.png)
-
-## What makes it interesting
-
-- **Recipient-confirmed settlements.** A payment affects balances only after the named recipient confirms it. Senders can cancel pending claims; recipients can reject incorrect ones.
-- **A solver with an explicit contract.** Money is converted to integer cents. Typical groups with up to 12 non-zero balances use an exact minimum-transaction search; larger groups use a deterministic greedy fallback.
-- **Server-enforced roles.** Admins manage a group, members add expenses and settle balances, and auditors get read-only access.
-- **An authorization-scoped audit trail.** Group, expense, role, and settlement events are recorded without exposing activity across groups.
-- **Fixed-point financial data.** PostgreSQL decimal columns and cent-based calculations avoid floating-point drift in stored balances.
-- **Short-lived browser sessions.** Access tokens live in memory, refresh tokens are hashed, rotated, and delivered through secure HTTP-only cookies.
-- **Realtime group updates.** Socket.io rooms are authenticated and membership-checked before clients can subscribe.
-- **Receipt-assisted entry.** Uploaded images are validated, processed in memory, and sent to the external OCR provider only after explicit consent.
-- **Practical exports.** CSV ledgers preserve base-currency and original-currency values separately; settlement plans can be exported as PDF.
-
-CashFlow records shared expenses and payment confirmations. It does not connect to bank accounts or move money.
-
-## Settlement lifecycle
-
-```text
-Expense added
-      ↓
-Balances recalculated
-      ↓
-Settlement plan generated
-      ↓
-Sender marks payment as sent
-      ↓
-Recipient confirms ─── or ─── rejects
-      ↓
-Confirmed payment updates the ledger
-```
-
-Settlement decisions use optimistic concurrency on the server, so two confirmation requests cannot complete the same pending payment twice.
-
-## Tech stack
-
-| Layer | Technology |
-| --- | --- |
-| Web | React 19, TypeScript, Vite, Tailwind CSS |
-| API | Express 5, TypeScript, Zod |
-| Data | PostgreSQL, Prisma |
-| Realtime | Socket.io, Redis pub/sub |
-| Auth | Rotating refresh sessions, bcrypt, JWT |
-| Solver | TypeScript with an optional C++/WebAssembly implementation |
-| Testing | Vitest, Testing Library, Supertest |
-| Hosting | Vercel frontend, Render API |
-
-## Run locally
-
-You will need Node.js 20+, PostgreSQL, and Redis.
+You'll need Node.js 20+, PostgreSQL and Redis.
 
 ```bash
 git clone https://github.com/SanishKumar/Cashflow.git
@@ -129,51 +126,69 @@ npm install
 cp .env.example apps/server/.env
 ```
 
-Set `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, and `CORS_ORIGIN` in `apps/server/.env`, then prepare the database:
+Set `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET` and `CORS_ORIGIN` in `apps/server/.env`, then:
 
 ```bash
-npm run db:migrate:deploy
-npm run db:seed
+npm run db:migrate:deploy && npm run db:seed
 ```
 
-Start the API and web app in separate terminals:
+Two terminals:
 
 ```bash
 npm run dev:server
+```
+
+```bash
 npm run dev:web
 ```
 
-The frontend runs on `http://localhost:5173`; the API runs on `http://localhost:4000`.
+The app is on `http://localhost:5173`, the API on `http://localhost:4000`. Seeded accounts are printed by the seed script. Set `APP_URL` if links should point somewhere other than `CORS_ORIGIN`.
 
-## Verify the repository
-
-The same command runs locally and in GitHub Actions:
+### Verifying the repository
 
 ```bash
 npm run verify
 ```
 
-It runs ESLint, all three test suites (server, web, clearing), the server TypeScript build, and the production Vite build. Production dependencies are also audited in CI.
+ESLint, all three test suites (server, web, clearing), the server TypeScript build and the production Vite build. CI runs the same command and audits production dependencies.
 
-## Repository map
+## Under the hood
 
-```text
-packages/clearing/     Multilateral obligation-clearing engine, benchmark, tests
-apps/web/              React application and component tests
-apps/server/           Express API, services, socket server, and API tests
-apps/server/prisma/    Prisma schema and versioned PostgreSQL migrations
-packages/solver/       Optional C++/WebAssembly settlement solver
-docs/                  Deployment notes and product screenshots
+| Layer | Built with |
+| --- | --- |
+| Web | React 19, TypeScript, Vite, Tailwind CSS |
+| Graph | Hand-rolled canvas renderer — force layout, particle flow, no graph library |
+| Clearing | Dependency-free TypeScript, runs in the browser |
+| API | Express 5, TypeScript, Zod |
+| Data | PostgreSQL, Prisma, integer minor units end to end |
+| Realtime | Socket.io over Redis, membership-checked rooms |
+| Auth | Rotating refresh sessions, bcrypt, in-memory access tokens |
+| Testing | Vitest, Testing Library, Supertest |
+
+A few things that took real care:
+
+- **Server-enforced roles.** Admins manage a group, members add and settle, auditors read. Checked on the server, never inferred in the client.
+- **Scoped audit trail.** Group, expense, role and settlement events are recorded without leaking activity across groups you don't belong to.
+- **Fixed-point money.** PostgreSQL decimal columns and cent-based arithmetic throughout. No floating-point drift in a stored balance.
+- **Receipt parsing that admits what it doesn't know.** Confidence is scored from whether a total line was found, whether items were read, and whether they reconcile — not a constant dressed up as a model score.
+
+## Project layout
+
+```
+packages/clearing/     Obligation-clearing engine, benchmark, tests
+apps/web/              React app — money graph, groups, ledger
+apps/server/           Express API, services, socket server
+apps/server/prisma/    Schema and versioned migrations
+packages/solver/       Optional C++/WebAssembly minimum-transfer solver
+docs/                  Deployment notes
 ```
 
-If you are reviewing the project, the most interesting code is the [circulation solver](packages/clearing/src/circulation.ts) and [path compensation](packages/clearing/src/compensation.ts). After that: the [settlement-payment service](apps/server/src/services/settlementPaymentService.ts), [minimum-transfer solver](apps/server/src/services/solver.ts), [Socket.io authorization](apps/server/src/socket/socketServer.ts), and [security model](SECURITY.md).
+Reviewing the code? Start with the [circulation solver](packages/clearing/src/circulation.ts) and [path compensation](packages/clearing/src/compensation.ts). After that: the [canvas graph](apps/web/src/components/MoneyGraph.tsx), the [obligation graph endpoint](apps/server/src/services/transactionService.ts), and the [security model](SECURITY.md).
 
 ## Deployment
 
-The hosted version uses Vercel for the frontend and Render for the API. HTTP API traffic is reverse-proxied through the Vercel origin so the refresh cookie remains first-party, while Socket.io connects directly with a short-lived access token.
-
-The complete release checklist is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Vercel for the frontend, Render for the API. HTTP traffic is reverse-proxied through the Vercel origin so the refresh cookie stays first-party, while Socket.io connects directly with a short-lived access token. Full checklist in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## License
 
-Released under the [MIT License](LICENSE).
+[MIT](LICENSE) · [Security](SECURITY.md) · [Privacy](PRIVACY.md)

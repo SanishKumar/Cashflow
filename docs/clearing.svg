@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" width="720" height="320" role="img" aria-label="Eight IOUs between five people collapse into four payments after loop clearing">
+  <title>Loop clearing: eight IOUs become four payments</title>
+
+  <defs>
+    <marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#09352e" opacity="0.55" />
+    </marker>
+    <marker id="tipLive" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#09352e" />
+    </marker>
+    <style>
+      .axis  { font: 500 11px 'JetBrains Mono', ui-monospace, monospace; letter-spacing: 3px; fill: #4e5a58; }
+      .figure{ font: 600 26px Inter, system-ui, sans-serif; fill: #09352e; }
+      .note  { font: 400 12px Inter, system-ui, sans-serif; fill: #4e5a58; }
+      .name  { font: 500 10px 'JetBrains Mono', ui-monospace, monospace; fill: #09352e; }
+      .plate { fill: #ffffff; stroke: #09352e; stroke-width: 1.2; }
+      .edge  { stroke: #09352e; stroke-width: 1.4; opacity: 0.5; fill: none; }
+      .gone  { stroke: #a8b3b2; stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.75; fill: none; }
+      .live  { stroke: #09352e; stroke-width: 2; fill: none; }
+      .saved { font: 600 12px Inter, system-ui, sans-serif; fill: #00650e; }
+    </style>
+  </defs>
+
+  <rect width="720" height="320" fill="#e0e0e0" />
+
+  <!-- ── Before ─────────────────────────────────────── -->
+  <text class="axis" x="28" y="34">[ TANGLED ]</text>
+
+  <g transform="translate(60, 60)">
+    <path class="edge" marker-end="url(#tip)" d="M135.4 41.1 L190.6 80.9" />
+    <path class="edge" marker-end="url(#tip)" d="M200.1 110.1 L178.9 174.9" />
+    <path class="edge" marker-end="url(#tip)" d="M167.1 174.9 L125.9 48.1" />
+    <path class="edge" marker-end="url(#tip)" d="M72.9 174.9 L114.1 48.1" />
+    <path class="edge" marker-end="url(#tip)" d="M154.0 193.0 L86.0 193.0" />
+    <path class="edge" marker-end="url(#tip)" d="M190.6 103.2 L82.4 181.8" />
+    <path class="edge" marker-end="url(#tip)" d="M49.4 103.2 L157.6 181.8" />
+    <path class="edge" marker-end="url(#tip)" d="M61.1 174.9 L39.9 110.1" />
+
+    <circle class="plate" cx="120" cy="30" r="14" />
+    <circle class="plate" cx="206" cy="92" r="14" />
+    <circle class="plate" cx="173" cy="193" r="14" />
+    <circle class="plate" cx="67"  cy="193" r="14" />
+    <circle class="plate" cx="34"  cy="92"  r="14" />
+
+    <text class="name" x="120" y="14" text-anchor="middle">Priya</text>
+    <text class="name" x="232" y="95" text-anchor="start">Rahul</text>
+    <text class="name" x="173" y="222" text-anchor="middle">Sam</text>
+    <text class="name" x="67"  y="222" text-anchor="middle">Dev</text>
+    <text class="name" x="8"   y="95"  text-anchor="end">Nina</text>
+  </g>
+
+  <text class="figure" x="28" y="286">₹4,800</text>
+  <text class="note"   x="28" y="304">owed across 8 IOUs</text>
+
+  <!-- ── Divider ────────────────────────────────────── -->
+  <line x1="360" y1="40" x2="360" y2="290" stroke="#cad3d2" stroke-width="1" />
+  <g transform="translate(360, 165)">
+    <circle r="16" fill="#85c093" />
+    <path d="M -5 0 L 4 0 M 0 -4 L 4 0 L 0 4" stroke="#09352e" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+  <text class="axis" x="360" y="205" text-anchor="middle">CANCEL</text>
+  <text class="axis" x="360" y="219" text-anchor="middle">LOOPS</text>
+
+  <!-- ── After ──────────────────────────────────────── -->
+  <text class="axis" x="692" y="34" text-anchor="end">[ CLEARED ]</text>
+
+  <g transform="translate(430, 60)">
+    <path class="gone" d="M167.1 174.9 L125.9 48.1" />
+    <path class="gone" d="M72.9 174.9 L114.1 48.1" />
+    <path class="gone" d="M154.0 193.0 L86.0 193.0" />
+    <path class="gone" d="M49.4 103.2 L157.6 181.8" />
+
+    <path class="live" marker-end="url(#tipLive)" d="M190.6 103.2 L82.4 181.8" />
+    <path class="live" marker-end="url(#tipLive)" d="M200.1 110.1 L178.9 174.9" />
+    <path class="live" marker-end="url(#tipLive)" d="M61.1 174.9 L39.9 110.1" />
+    <path class="live" marker-end="url(#tipLive)" d="M135.4 41.1 L190.6 80.9" />
+
+    <circle class="plate" cx="120" cy="30" r="14" />
+    <circle class="plate" cx="206" cy="92" r="14" />
+    <circle class="plate" cx="173" cy="193" r="14" />
+    <circle class="plate" cx="67"  cy="193" r="14" />
+    <circle class="plate" cx="34"  cy="92"  r="14" />
+
+    <text class="name" x="120" y="14" text-anchor="middle">Priya</text>
+    <text class="name" x="232" y="95" text-anchor="start">Rahul</text>
+    <text class="name" x="173" y="222" text-anchor="middle">Sam</text>
+    <text class="name" x="67"  y="222" text-anchor="middle">Dev</text>
+    <text class="name" x="8"   y="95"  text-anchor="end">Nina</text>
+  </g>
+
+  <text class="figure" x="692" y="286" text-anchor="end">₹550</text>
+  <text class="saved"  x="692" y="304" text-anchor="end">₹4,250 cancelled · nobody paid it</text>
+</svg>
