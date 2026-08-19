@@ -114,6 +114,7 @@ export function WorkspacePage() {
   useEffect(() => {
     if (!currentUserId) return;
     let active = true;
+    let warmUp = 0;
 
     groupApi
       .list()
@@ -122,17 +123,22 @@ export function WorkspacePage() {
         setGroups(list);
         if (list.length > 0) setGroupId((current) => current ?? list[0]!.id);
 
-        for (const item of list) {
-          if (cache.current.has(item.id)) continue;
-          obligationApi
-            .get(item.id)
-            .then((data) => {
-              cache.current.set(item.id, toObligations(data));
-            })
-            .catch(() => {
-              // A failed warm-up just means that group loads on demand.
-            });
-        }
+        // Warm the other groups only once the selected one has had a clear
+        // run at the network. Firing all of them at once made the group you
+        // are actually looking at queue behind its own siblings.
+        warmUp = window.setTimeout(() => {
+          for (const item of list) {
+            if (cache.current.has(item.id)) continue;
+            obligationApi
+              .get(item.id)
+              .then((data) => {
+                cache.current.set(item.id, toObligations(data));
+              })
+              .catch(() => {
+                // A failed warm-up just means that group loads on demand.
+              });
+          }
+        }, 1200);
       })
       .catch(() => {
         // The sample network keeps the stage populated either way.
@@ -140,6 +146,7 @@ export function WorkspacePage() {
 
     return () => {
       active = false;
+      window.clearTimeout(warmUp);
     };
   }, [currentUserId]);
 
@@ -249,6 +256,8 @@ export function WorkspacePage() {
     [active, obligations]
   );
 
+  // True only before the first response for the selected group arrives.
+  const pending = loading && remote === null;
   const myName = currentUser?.name;
   const handleSelect = useCallback((id: string | null) => setSelected(id), []);
   const hasData = analysis.parties.length > 0;
@@ -261,11 +270,12 @@ export function WorkspacePage() {
       money={money}
       myName={myName}
       count={stats.obligationsBefore}
+      pending={pending}
     />
   );
 
   const engine = (
-    <EnginePanel view={view} stats={stats} plan={plan} money={money} myName={myName} />
+    <EnginePanel view={view} stats={stats} plan={plan} money={money} myName={myName} pending={pending} />
   );
 
   const modeSwitch = (
@@ -398,6 +408,7 @@ function LedgerPanel({
   money,
   myName,
   count,
+  pending,
 }: {
   parties: GraphParty[];
   selected: string | null;
@@ -405,20 +416,21 @@ function LedgerPanel({
   money: (minorUnits: number) => string;
   myName?: string;
   count: number;
+  pending: boolean;
 }) {
   return (
     <>
       <div className="hidden border-b border-outline-variant px-4 py-3 lg:block">
         <p className="text-section-title">Ledger</p>
         <p className="mt-1 text-[11px] text-on-surface-variant">
-          {parties.length} people · {count} IOUs
+          {pending ? "Loading" : `${parties.length} people · ${count} IOUs`}
         </p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {parties.length === 0 ? (
           <p className="px-2 py-6 text-center text-[11px] text-on-surface-variant">
-            Nothing outstanding here.
+            {pending ? "Loading obligations…" : "Nothing outstanding here."}
           </p>
         ) : (
           [...parties]
@@ -465,18 +477,27 @@ function EnginePanel({
   plan,
   money,
   myName,
+  pending,
 }: {
   view: ViewMode;
   stats: Stats;
   plan: Obligation[];
   money: (minorUnits: number) => string;
   myName?: string;
+  pending: boolean;
 }) {
   return (
     <>
       <div className="border-b border-outline-variant px-4 py-3">
         <p className="text-section-title hidden lg:block">Engine</p>
-        {view === "original" ? (
+        {pending ? (
+          <>
+            <p className="text-figure mt-2 text-[24px] !text-on-surface-variant">—</p>
+            <p className="mt-1 text-[11px] leading-4 text-on-surface-variant">
+              Reading this group&rsquo;s obligations…
+            </p>
+          </>
+        ) : view === "original" ? (
           <>
             <p className="text-figure mt-2 text-[24px]">{money(stats.grossBefore)}</p>
             <p className="mt-1 text-[11px] leading-4 text-on-surface-variant">
