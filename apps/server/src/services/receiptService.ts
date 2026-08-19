@@ -2,31 +2,35 @@ import { createWorker } from "tesseract.js";
 import { mkdirSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import {
+  mergeBoxes,
+  parseReceiptLines,
+  parseReceiptText,
+  type BoundingBox,
+  type ReceiptData,
+  type ReceiptLine,
+} from "./receiptParser.js";
 
-export interface ReceiptItem {
-  name: string;
-  quantity: number;
-  price: number;
+export type { ReceiptData, ReceiptItem, BoundingBox } from "./receiptParser.js";
+
+interface OcrSpaceWord {
+  WordText?: string;
+  Left?: number;
+  Top?: number;
+  Height?: number;
+  Width?: number;
 }
 
-export interface ReceiptData {
-  vendor: string;
-  date: string;
-  total: number;
-  subtotal?: number;
-  tax?: number;
-  tip?: number;
-  currency: string;
-  category: string;
-  items: ReceiptItem[];
-  confidence: number;
-  rawText: string;
+interface OcrSpaceLine {
+  LineText?: string;
+  Words?: OcrSpaceWord[];
 }
 
 interface OcrSpaceParsedResult {
   ParsedText?: string | null;
   ErrorMessage?: string | string[] | null;
   ErrorDetails?: string | null;
+  TextOverlay?: { Lines?: OcrSpaceLine[] } | null;
 }
 
 interface OcrSpaceResponse {
@@ -39,96 +43,6 @@ interface OcrSpaceResponse {
 const TESSERACT_CACHE_PATH = join(tmpdir(), "cashflow-tesseract-cache");
 const OCR_SPACE_ENDPOINT = "https://api.ocr.space/parse/image";
 const OCR_SPACE_FREE_FILE_LIMIT_BYTES = 1 * 1024 * 1024;
-
-function toNumber(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value.replace(/[^0-9.-]/g, ""));
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
-function detectCurrency(text: string): string {
-  if (/\u20B9|\bINR\b/i.test(text)) return "INR";
-  if (/\u20AC|\bEUR\b/i.test(text)) return "EUR";
-  if (/\u00A3|\bGBP\b/i.test(text)) return "GBP";
-  if (/\bCAD\b/i.test(text)) return "CAD";
-  if (/\bAUD\b/i.test(text)) return "AUD";
-  return "USD";
-}
-
-function categoryFromText(text: string): string {
-  const normalized = text.toLowerCase();
-  if (/uber|lyft|taxi|metro|fuel|gas station|parking/.test(normalized)) return "transport";
-  if (/restaurant|cafe|coffee|pizza|burger|dining|food/.test(normalized)) return "dining";
-  if (/grocery|market|supermarket|walmart|vegetable/.test(normalized)) return "groceries";
-  if (/hotel|airlines|flight|airbnb/.test(normalized)) return "travel";
-  if (/pharmacy|clinic|hospital/.test(normalized)) return "health";
-  if (/movie|cinema|streaming|game/.test(normalized)) return "entertainment";
-  if (/electric|water bill|internet|utility/.test(normalized)) return "utilities";
-  if (/store|mall|shop/.test(normalized)) return "shopping";
-  return "other";
-}
-
-function dateFromText(text: string): string {
-  const isoMatch = text.match(/\b(20\d{2})[-/.](0?[1-9]|1[0-2])[-/.]([0-2]?\d|3[01])\b/);
-  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
-
-  const slashMatch = text.match(/\b(0?[1-9]|[12]\d|3[01])[/.](0?[1-9]|1[0-2])[/.](20\d{2})\b/);
-  if (slashMatch) return `${slashMatch[3]}-${slashMatch[2].padStart(2, "0")}-${slashMatch[1].padStart(2, "0")}`;
-  return "";
-}
-
-function monetaryValues(text: string): number[] {
-  return [...text.matchAll(/(?:[$\u20B9\u20AC\u00A3]|\b(?:USD|INR|EUR|GBP)\s*)?\s*(\d{1,3}(?:,\d{3})*\.\d{2})\b/gi)]
-    .map((match) => Number(match[1].replace(/,/g, "")))
-    .filter((amount) => Number.isFinite(amount) && amount >= 0);
-}
-
-function amountForLabel(text: string, label: RegExp): number | undefined {
-  const matches = [...text.matchAll(label)];
-  const lastMatch = matches.at(-1);
-  return lastMatch ? toNumber(lastMatch[1]) : undefined;
-}
-
-function itemLines(text: string): ReceiptItem[] {
-  const ignored = /subtotal|total|tax|tip|change|cash|card|visa|mastercard|balance|amount due/i;
-  return text.split(/\r?\n/).flatMap((line) => {
-    const match = line.trim().match(/^(.+?)\s+(?:(\d+)\s*[x\u00D7]\s*)?([$\u20B9\u20AC\u00A3]?\s*\d{1,3}(?:,\d{3})*\.\d{2})$/i);
-    if (!match || ignored.test(match[1])) return [];
-    const price = toNumber(match[3]);
-    if (price === undefined || !match[1].trim()) return [];
-    return [{ name: match[1].trim(), quantity: Number(match[2] || 1), price }];
-  }).slice(0, 30);
-}
-
-function fallbackParse(rawText: string): ReceiptData {
-  const total = amountForLabel(
-    rawText,
-    /(?:grand\s*total|total\s*due|amount\s*due|balance\s*due|\btotal)\D{0,18}(\d{1,3}(?:,\d{3})*\.\d{2})/gi
-  ) ?? Math.max(...monetaryValues(rawText), 0);
-  const lines = rawText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const vendor = lines.find((line) => !/receipt|invoice|date|time|tax|total/i.test(line) && /[a-z]/i.test(line)) ?? "Scanned receipt";
-  const subtotal = amountForLabel(rawText, /\bsubtotal\D{0,18}(\d{1,3}(?:,\d{3})*\.\d{2})/gi);
-  const tax = amountForLabel(rawText, /\btax\D{0,18}(\d{1,3}(?:,\d{3})*\.\d{2})/gi);
-  const tip = amountForLabel(rawText, /\btip\D{0,18}(\d{1,3}(?:,\d{3})*\.\d{2})/gi);
-  const items = itemLines(rawText);
-
-  return {
-    vendor,
-    date: dateFromText(rawText),
-    total,
-    subtotal,
-    tax,
-    tip,
-    currency: detectCurrency(rawText),
-    category: categoryFromText(`${vendor} ${rawText}`),
-    items,
-    confidence: total > 0 ? (items.length > 0 ? 0.68 : 0.52) : 0.2,
-    rawText,
-  };
-}
 
 function fileExtensionFor(mimetype: string): string {
   switch (mimetype) {
@@ -145,15 +59,50 @@ function errorText(value: unknown): string {
 }
 
 function ocrSpaceErrorMessage(payload: OcrSpaceResponse): string {
-  const errors = [
+  return [
     errorText(payload.ErrorMessage),
     errorText(payload.ErrorDetails),
     ...(payload.ParsedResults ?? []).flatMap((result) => [
       errorText(result.ErrorMessage),
       errorText(result.ErrorDetails),
     ]),
-  ].filter(Boolean);
-  return errors.join("; ");
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+/**
+ * Turns the provider's word overlay into lines that carry their position on the
+ * image. Without geometry a receipt is just a wall of text, and the interface
+ * can only ask people to trust the parse; with it, every row can be pointed at.
+ */
+function linesFromOverlay(results: readonly OcrSpaceParsedResult[]): ReceiptLine[] {
+  const lines: ReceiptLine[] = [];
+
+  for (const result of results) {
+    for (const line of result.TextOverlay?.Lines ?? []) {
+      const words = line.Words ?? [];
+      const text = (line.LineText ?? words.map((word) => word.WordText ?? "").join(" ")).trim();
+      if (!text) continue;
+
+      const boxes: BoundingBox[] = [];
+      for (const word of words) {
+        if (
+          typeof word.Left === "number" &&
+          typeof word.Top === "number" &&
+          typeof word.Width === "number" &&
+          typeof word.Height === "number"
+        ) {
+          boxes.push({ x: word.Left, y: word.Top, width: word.Width, height: word.Height });
+        }
+      }
+
+      const bbox = mergeBoxes(boxes);
+      lines.push(bbox ? { text, bbox } : { text });
+    }
+  }
+
+  return lines;
 }
 
 async function extractWithOcrSpace(image: Buffer, mimetype: string): Promise<ReceiptData> {
@@ -167,7 +116,8 @@ async function extractWithOcrSpace(image: Buffer, mimetype: string): Promise<Rec
   formData.set("file", new Blob([new Uint8Array(image)], { type: mimetype }), `receipt.${fileExtensionFor(mimetype)}`);
   formData.set("OCREngine", "3");
   formData.set("language", "auto");
-  formData.set("isOverlayRequired", "false");
+  // Word geometry is what makes a line addressable in the interface.
+  formData.set("isOverlayRequired", "true");
   formData.set("detectOrientation", "true");
   formData.set("scale", "true");
   formData.set("isTable", "true");
@@ -180,18 +130,23 @@ async function extractWithOcrSpace(image: Buffer, mimetype: string): Promise<Rec
 
   if (!response.ok) throw new Error(`OCR.space request failed with status ${response.status}`);
 
-  const payload = await response.json() as OcrSpaceResponse;
-  const rawText = (payload.ParsedResults ?? [])
+  const payload = (await response.json()) as OcrSpaceResponse;
+  const results = payload.ParsedResults ?? [];
+  const providerError = ocrSpaceErrorMessage(payload);
+
+  const overlayLines = linesFromOverlay(results);
+  if (overlayLines.length > 0) return parseReceiptLines(overlayLines);
+
+  const rawText = results
     .map((result) => result.ParsedText?.trim() ?? "")
     .filter(Boolean)
     .join("\n");
-  const providerError = ocrSpaceErrorMessage(payload);
 
   if (payload.IsErroredOnProcessing || !rawText) {
     throw new Error(providerError || "OCR.space did not return readable receipt text");
   }
 
-  return fallbackParse(rawText);
+  return parseReceiptText(rawText);
 }
 
 async function extractWithLocalOcr(image: Buffer): Promise<ReceiptData> {
@@ -199,26 +154,32 @@ async function extractWithLocalOcr(image: Buffer): Promise<ReceiptData> {
   const worker = await createWorker("eng", 1, { cachePath: TESSERACT_CACHE_PATH });
   try {
     const { data } = await worker.recognize(image);
-    return fallbackParse(data.text);
+    return parseReceiptText(data.text);
   } finally {
     await worker.terminate();
   }
 }
 
 /**
- * OCR.space Engine 3 is the primary receipt reader. Local Tesseract remains
- * available when the provider, its free quota, or a large upload is unavailable.
+ * OCR.space Engine 3 is the primary reader. Local Tesseract covers the cases
+ * where the provider, its free quota, or the upload size rules it out.
  */
 export async function scanReceipt(image: Buffer, mimetype: string): Promise<ReceiptData> {
   try {
     return await extractWithOcrSpace(image, mimetype);
   } catch (providerError) {
-    console.warn("[RECEIPT] OCR.space scan failed; using local OCR fallback:", providerError instanceof Error ? providerError.message : "unknown error");
+    console.warn(
+      "[RECEIPT] OCR.space scan failed; using local OCR fallback:",
+      providerError instanceof Error ? providerError.message : "unknown error"
+    );
     try {
       return await extractWithLocalOcr(image);
     } catch (ocrError) {
-      console.warn("[RECEIPT] Local OCR fallback failed:", ocrError instanceof Error ? ocrError.message : "unknown error");
-      return fallbackParse("");
+      console.warn(
+        "[RECEIPT] Local OCR fallback failed:",
+        ocrError instanceof Error ? ocrError.message : "unknown error"
+      );
+      return parseReceiptText("");
     }
   }
 }

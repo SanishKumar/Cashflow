@@ -4,6 +4,7 @@
 
 import { useState, useMemo, useRef } from "react";
 import { receiptApi, transactionApi } from "../lib/api";
+import { prepareReceiptImage } from "../lib/receiptImage";
 import { useUser } from "../contexts/UserContext";
 import type { Group, ReceiptData } from "../types/index";
 
@@ -32,9 +33,9 @@ function formatCurrency(amount: number, currency: string): string {
 }
 
 function confidenceLabel(confidence: number): { label: string; className: string } {
-  if (confidence >= 0.85) return { label: "High confidence", className: "text-secondary bg-secondary/10 border-secondary/20" };
-  if (confidence >= 0.6) return { label: "Medium confidence", className: "text-warning bg-warning/10 border-warning/20" };
-  return { label: "Low confidence — please review", className: "text-error bg-error/10 border-error/20" };
+  if (confidence >= 0.85) return { label: "Items match the total", className: "text-secondary bg-secondary/10 border-secondary/20" };
+  if (confidence >= 0.6) return { label: "Partly checked", className: "text-warning bg-warning/10 border-warning/20" };
+  return { label: "Could not verify — check it", className: "text-error bg-error/10 border-error/20" };
 }
 
 export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
@@ -140,7 +141,9 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
     setScanning(true);
     setError(null);
     try {
-      const result = await receiptApi.scan(file);
+      // Large photos are shrunk first so the stronger engine can accept them
+      // instead of the request falling through to the local reader.
+      const result = await receiptApi.scan(await prepareReceiptImage(file));
       setReceiptData(result);
       setAmount(result.total.toFixed(2));
       setCurrency(result.currency || currency);
@@ -287,6 +290,16 @@ export function ExpenseModal({ group, onClose, onCreated }: ExpenseModalProps) {
                   {showReceiptItems ? "expand_less" : "expand_more"}
                 </span>
               </button>
+              {(receiptData.warnings?.length ?? 0) > 0 && (
+                <ul className="border-t border-outline-variant/30 px-3 py-2 space-y-1">
+                  {receiptData.warnings!.map((warning) => (
+                    <li key={warning} className="flex items-start gap-2 text-[11px] leading-4 text-on-surface-variant">
+                      <span className="material-symbols-outlined mt-0.5 shrink-0 text-[14px] text-warning">info</span>
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {showReceiptItems && receiptData.items.length > 0 && (
                 <div className="border-t border-outline-variant/30 px-3 py-2 space-y-2 max-h-36 overflow-y-auto">
                   {receiptData.items.map((item, index) => (

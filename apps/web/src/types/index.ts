@@ -186,7 +186,10 @@ export interface ReceiptData {
   currency: string;
   category: string;
   items: ReceiptItem[];
+  /** 0-1, derived from what the parser could corroborate. */
   confidence: number;
+  /** Plain-language notes on anything it could not establish. */
+  warnings?: string[];
 }
 
 export interface ApiResponse<T = unknown> {
