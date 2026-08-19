@@ -13,7 +13,9 @@
 
 </div>
 
-![Eight IOUs between five people collapsing into four payments](docs/clearing.svg)
+![CashFlow: switching between as-owed, loop clearing and full simplify, then the group ledger and debt map](docs/demo.gif)
+
+<sub>Real data, real engine. Eight IOUs, $528 outstanding — $190 of it cancels with nobody paying and nobody owing a stranger.</sub>
 
 ---
 
@@ -22,6 +24,8 @@
 Five friends, eight IOUs, ₹4,800 outstanding. But Priya owes Rahul, Rahul owes Sam, and Sam owes Priya — that loop is money chasing its own tail. It can be cancelled outright. Nobody pays anything, nobody's net position changes, and nobody ends up owing a stranger.
 
 Do that everywhere it occurs and ₹4,800 becomes ₹550 across four payments.
+
+![Eight IOUs between five people collapsing into four payments](docs/clearing.svg)
 
 Every expense app has a *simplify debts* button. It goes further than this — and to do it, it quietly makes people owe strangers. Splitwise's own documentation admits it "makes changes not only to your account, but also to the accounts of your friends — including balances that you can't see."
 
@@ -45,16 +49,6 @@ CashFlow makes that a choice, shows what each option costs, and lets you take th
 Everything else you'd expect is there: groups with roles, an audit trail, realtime updates, CSV and PDF export, multi-currency.
 
 > **CashFlow records who owes whom. It never connects to a bank or moves money.**
-
-<!--
-  TODO: demo recording.
-  Record at 1440x900, light theme, signed out so the sample network loads:
-    1. land on / with the tangled graph
-    2. click "Cancel loops" and let the edges dissolve
-    3. click "Simplify all" so the red new-counterparty edges appear
-    4. drag a node to show it is live
-  Save as docs/demo.gif and swap the SVG above for it.
--->
 
 ## The clearing engine
 
