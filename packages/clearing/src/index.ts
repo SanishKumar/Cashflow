@@ -24,6 +24,9 @@ export type {
 } from "./types.js";
 export { buildGraph, graphToObligations, grossFloor, grossTotal, netPositions, pairSet } from "./graph.js";
 export { generateNetwork, makeRandom, type NetworkSpec } from "./generate.js";
+export { generateCash, type CashSpec } from "./balance.js";
+export { cascade, type Cascade, type CascadeOptions, type PartyOutcome } from "./cascade.js";
+export { rescue, type RescueOptions, type RescuePlan } from "./rescue.js";
 export { verifyClearing } from "./certificate.js";
 export {
   maximiseCirculationByRouting,
