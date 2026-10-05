@@ -25,8 +25,30 @@ export type ClearingMode =
    */
   | "paths";
 
+/**
+ * Which exact method finds the loops. All three reach the same optimum; they
+ * differ in how far they scale and in what they hand back.
+ */
+export type ClearingSolver =
+  /**
+   * Saturate cycles, then cancel negative cycles until none remain. The
+   * reference method, and the default. Comfortable up to a few thousand
+   * obligations.
+   */
+  | "cancelling"
+  /**
+   * Route net debt along the shortest chains of existing obligations. The
+   * fastest of the three, built for national-round sizes, and it returns a
+   * certificate.
+   */
+  | "routing"
+  /** Network simplex on the circulation directly. Also returns a certificate. */
+  | "simplex";
+
 export interface ClearingOptions {
   mode: ClearingMode;
+  /** Defaults to "cancelling". Use "routing" beyond a few thousand obligations. */
+  solver?: ClearingSolver;
   /**
    * In "paths" mode, prefer chain reductions that reuse an existing pair over
    * ones that introduce a new counterparty. Costs nothing in cleared value and
@@ -65,6 +87,18 @@ export interface ClearingMetrics {
   noNewCounterparties: boolean;
 }
 
+/**
+ * Proof that a cycle clearing is maximal: one number per party.
+ *
+ * With these, anyone holding the original obligations and the result can
+ * confirm in a single pass that no further loop could have been cancelled,
+ * without re-running the solver or trusting whoever did. See `verifyClearing`.
+ */
+export interface ClearingCertificate {
+  /** Party name and dual value, one pair per party. */
+  potential: Array<[party: string, value: number]>;
+}
+
 export interface ClearingResult {
   mode: ClearingMode;
   /** What remains to be paid once clearing is applied. */
@@ -77,4 +111,9 @@ export interface ClearingResult {
    */
   optimal: boolean;
   iterations: number;
+  /**
+   * Present for "cycles" mode solved by "routing" or "simplex". Path
+   * compensation needs none: reaching `grossFloor` is its own proof.
+   */
+  certificate?: ClearingCertificate;
 }

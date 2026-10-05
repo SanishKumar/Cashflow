@@ -1,5 +1,6 @@
 import { maximiseCirculation } from "./circulation.js";
 import { compensatePaths } from "./compensation.js";
+import { maximiseCirculationByRouting, maximiseCirculationBySimplex } from "./components.js";
 import {
   buildGraph,
   grossFloor,
@@ -10,17 +11,34 @@ import {
   pairSet,
   type Graph,
 } from "./graph.js";
-import type { ClearingOptions, ClearingResult, Obligation } from "./types.js";
+import type { ClearingCertificate, ClearingOptions, ClearingResult, Obligation } from "./types.js";
 
 export type {
+  ClearingCertificate,
   ClearingMetrics,
   ClearingMode,
   ClearingOptions,
   ClearingResult,
+  ClearingSolver,
   Obligation,
 } from "./types.js";
 export { buildGraph, graphToObligations, grossFloor, grossTotal, netPositions, pairSet } from "./graph.js";
 export { generateNetwork, makeRandom, type NetworkSpec } from "./generate.js";
+export { verifyClearing } from "./certificate.js";
+export {
+  maximiseCirculationByRouting,
+  maximiseCirculationBySimplex,
+  type ExactCirculation,
+} from "./components.js";
+export {
+  solveMinCostFlow,
+  verifyFlow,
+  type FlowOptions,
+  type FlowProblem,
+  type FlowSolution,
+  type FlowStatus,
+  type FlowVerdict,
+} from "./simplex.js";
 
 const DEFAULT_MAX_ITERATIONS = 100_000;
 
@@ -53,13 +71,35 @@ export function clear(
   const floor = grossFloor(graph);
   const netsBefore = netPositions(graph);
 
-  const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+  // Path compensation takes a step or two per obligation, so the default
+  // ceiling has to grow with the network or large ones stop short of the floor.
+  const maxIterations =
+    options.maxIterations ?? Math.max(DEFAULT_MAX_ITERATIONS, obligationsBefore * 20);
+  const solver = options.solver ?? "cancelling";
 
-  const circulation = maximiseCirculation(graph, maxIterations);
-  applyCirculation(graph, circulation.arcs);
+  let optimal: boolean;
+  let iterations: number;
+  let certificate: ClearingCertificate | undefined;
 
-  let optimal = circulation.optimal;
-  let iterations = circulation.iterations;
+  if (solver === "cancelling") {
+    const circulation = maximiseCirculation(graph, maxIterations);
+    applyCirculation(graph, circulation.arcs);
+    optimal = circulation.optimal;
+    iterations = circulation.iterations;
+  } else {
+    const exact =
+      solver === "routing"
+        ? maximiseCirculationByRouting(graph)
+        : maximiseCirculationBySimplex(graph);
+    applyCirculation(graph, exact.arcs);
+    optimal = true;
+    iterations = exact.work;
+    if (options.mode === "cycles") {
+      certificate = {
+        potential: graph.nodes.map((party, index) => [party, exact.solution.potential[index]!]),
+      };
+    }
+  }
 
   if (options.mode === "paths") {
     const compensation = compensatePaths(graph, {
@@ -101,5 +141,6 @@ export function clear(
     },
     optimal,
     iterations,
+    ...(certificate ? { certificate } : {}),
   };
 }
