@@ -9,6 +9,7 @@
     "test": "vitest run",
     "bench": "tsx bench/run.ts",
     "bench:scale": "tsx bench/scale.ts",
+    "bench:rescue": "tsx bench/rescue.ts",
     "profile": "tsx bench/profile.ts",
     "typecheck": "tsc --noEmit"
   },
