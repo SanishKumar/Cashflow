@@ -29,7 +29,7 @@ export interface ExactCirculation {
 }
 
 /** Adjacency in compressed-row form: arcs leaving node u are `arcs[start[u] .. start[u+1])`. */
-interface Adjacency {
+export interface Adjacency {
   start: Int32Array;
   arcs: Int32Array;
 }
@@ -57,7 +57,7 @@ function adjacencyOf(nodeCount: number, from: Int32Array): Adjacency {
  * tens of thousands of firms deep along one path, which is further than the
  * call stack goes.
  */
-function componentsOf(
+export function componentsOf(
   nodeCount: number,
   to: Int32Array,
   adjacency: Adjacency
