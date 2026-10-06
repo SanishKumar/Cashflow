@@ -1,6 +1,11 @@
 // ──────────────────────────────────────────────
-// Group Detail Page — v2.1 Modernized
+// Group Detail Page
 // Ledger + Graph + Balances + Actions
+//
+// The balances can be put away on any tab and at any width. On a phone they
+// are a sheet under the content, folded by default to one line carrying the
+// group total, so the ledger or the debt map has the screen. On a desk they
+// are the column on the right, which folds to a rail that keeps the actions.
 // ──────────────────────────────────────────────
 
 import { lazy, Suspense, useState, useCallback, useEffect } from "react";
@@ -15,6 +20,9 @@ import { SettlementPaymentsPanel } from "../components/SettlementPaymentsPanel";
 import { DeleteGroupModal } from "../components/DeleteGroupModal";
 import { RoleManager } from "../components/RoleManager";
 import { AuditLogViewer } from "../components/AuditLogViewer";
+import { SheetHandle } from "../components/SheetHandle";
+import { useMedia } from "../hooks/useMedia";
+import { useStoredFlag } from "../hooks/useStoredFlag";
 import { useUser } from "../contexts/UserContext";
 
 const DebtGraph = lazy(() =>
@@ -45,6 +53,14 @@ export function GroupDetailPage() {
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [liveSettlements, setLiveSettlements] = useState<Settlement[] | null>(null);
   const { currentUserId } = useUser();
+
+  // One panel, two shapes, and a separate memory for each: wanting the sheet
+  // out of the way on a phone says nothing about the column on a desk.
+  const wide = useMedia("(min-width: 768px)");
+  const [sheetChoice, setSheetOpen] = useStoredFlag("cashflow.group.sheet");
+  const [columnChoice, setColumnOpen] = useStoredFlag("cashflow.group.column");
+  const sheetOpen = sheetChoice ?? false;
+  const columnOpen = columnChoice ?? true;
 
   useEffect(() => {
     if (searchParams.get("settle") !== "1") return;
@@ -126,11 +142,119 @@ export function GroupDetailPage() {
   const totalOwed = currentBalances.filter((b) => b.netBalance > 0).reduce((sum, b) => sum + b.netBalance, 0);
   const pendingPayments = (settlementPayments ?? []).filter((payment) => payment.status === "PENDING");
   const incomingPendingCount = pendingPayments.filter((payment) => payment.toUserId === currentUserId).length;
+  const settlementCount = currentSettlements.length;
+
+  const tabClass = (tab: ViewMode): string =>
+    `h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
+      viewMode === tab
+        ? "bg-surface-container-high text-on-surface shadow-sm"
+        : "text-on-surface-variant hover:text-on-surface"
+    }`;
+
+  const liveDot = (
+    <span className="relative flex h-2 w-2 shrink-0">
+      {connected && <span className="animate-sync-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />}
+      <span className={`relative inline-flex h-2 w-2 rounded-full ${connected ? "bg-secondary" : "bg-outline"}`} />
+    </span>
+  );
+
+  const balancesBody = (
+    <div className="p-4 md:p-5 flex-1 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[13px] font-bold text-on-surface">Open balances</h3>
+      </div>
+
+      {/* Summary Card */}
+      <div className="rounded-2xl border border-outline-variant/70 bg-surface-container p-4 shadow-[0_8px_20px_rgba(31,35,54,0.04)] flex flex-col gap-1">
+        <span className="text-label text-[10px]">Group total</span>
+        <span className="text-data-lg text-secondary">{formatCurrency(totalOwed, group.currency)}</span>
+        <span className="text-[11px] text-on-surface-variant mt-1">
+          {settlementCount} settlement{settlementCount !== 1 ? "s" : ""} needed
+        </span>
+      </div>
+
+      {/* Individual */}
+      <div className="flex flex-col gap-2">
+        {currentBalances.map((balance, i) => (
+          <div
+            key={balance.userId}
+            className="flex items-center gap-3 p-3 rounded-lg hover:bg-glass-hover transition-colors"
+          >
+            <div className={`avatar avatar-sm avatar-${i % 6}`}>
+              {getInitials(balance.name)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="text-[13px] font-medium text-on-surface truncate block">{balance.name}</span>
+            </div>
+            <span
+              className={`text-data font-semibold ${
+                balance.netBalance > 0.01
+                  ? "text-positive"
+                  : balance.netBalance < -0.01
+                    ? "text-negative"
+                    : "text-neutral"
+              }`}
+            >
+              {balance.netBalance > 0.01 ? "+" : ""}{formatCurrency(balance.netBalance, group.currency)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Settlements Preview */}
+      {settlementCount > 0 && (
+        <>
+          <div className="h-px bg-outline-variant/30 my-1" />
+          <h3 className="text-[13px] font-bold text-on-surface">Suggested settlements</h3>
+          <div className="flex flex-col gap-2">
+            {currentSettlements.map((s, i) => (
+              <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-surface-dim text-[12px]">
+                <span className="font-medium text-on-surface">{s.fromName.split(" ")[0]}</span>
+                <span className="material-symbols-outlined text-[14px] text-on-surface-variant">arrow_forward</span>
+                <span className="font-medium text-on-surface">{s.toName.split(" ")[0]}</span>
+                <span className="ml-auto text-data text-secondary font-semibold">{formatCurrency(s.amount, group.currency)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Danger Zone — Admin Only */}
+      {isAdmin && (
+        <div className="mt-4 pt-4 border-t border-error/20 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-error text-[16px]">warning</span>
+            <h3 className="text-section-title !text-error">Danger Zone</h3>
+          </div>
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="btn-secondary w-full !border-error/20 !text-error hover:!bg-error hover:!text-on-error transition-colors"
+          >
+            <span className="material-symbols-outlined text-[16px]">delete</span>
+            Delete Group
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  const status = (
+    <div className="p-4 border-t border-outline-variant/30 flex items-center justify-between shrink-0">
+      <div className="flex items-center gap-2">
+        {liveDot}
+        <span className="text-[11px] text-on-surface-variant font-medium">{connected ? "Updates live" : "Reconnecting"}</span>
+      </div>
+      {connected && <span className="text-[10px] text-on-surface-variant tabular-nums">{latency}ms</span>}
+    </div>
+  );
+
+  const railButton =
+    "flex h-9 w-9 items-center justify-center rounded-[4px] text-on-surface-variant transition-colors hover:bg-glass-hover hover:text-on-surface";
 
   return (
-    <div className="mobile-scroll-safe h-full flex flex-col bg-background md:flex-row overflow-y-auto md:overflow-hidden">
+    <div className="h-full flex flex-col bg-background md:flex-row overflow-hidden">
       {/* ── Center Panel ──────────────────── */}
-      <section className="shrink-0 md:flex-1 md:h-full flex flex-col border-r border-outline-variant/70 overflow-hidden min-w-0">
+      <section className="relative min-h-0 min-w-0 flex-1 md:h-full flex flex-col overflow-hidden md:border-r md:border-outline-variant/70">
         {/* Header */}
         <header className="h-auto min-h-14 border-b border-outline-variant/70 flex flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-6 md:py-4 bg-surface-container shrink-0">
           <div className="flex items-center gap-3">
@@ -143,47 +267,19 @@ export function GroupDetailPage() {
             </div>
           </div>
           <div className="flex max-w-full flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5 overflow-x-auto whitespace-nowrap">
-            <button
-              onClick={() => setViewMode("ledger")}
-              className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
-                viewMode === "ledger"
-                  ? "bg-surface-container-high text-on-surface shadow-sm"
-                  : "text-on-surface-variant hover:text-on-surface"
-              }`}
-            >
-              Ledger
-            </button>
-            <button
-              onClick={() => setViewMode("payments")}
-              className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
-                viewMode === "payments"
-                  ? "bg-surface-container-high text-on-surface shadow-sm"
-                  : "text-on-surface-variant hover:text-on-surface"
-              }`}
-            >
-              Payments{incomingPendingCount > 0 ? ` (${incomingPendingCount})` : ""}
-            </button>
-            <button
-              onClick={() => setViewMode("graph")}
-              className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
-                viewMode === "graph"
-                  ? "bg-surface-container-high text-on-surface shadow-sm"
-                  : "text-on-surface-variant hover:text-on-surface"
-              }`}
-            >
-              Debt map
-            </button>
-            <button
-              onClick={() => setViewMode("settings")}
-              className={`h-7 px-3 rounded-md text-[12px] font-medium transition-all duration-150 ${
-                viewMode === "settings"
-                  ? "bg-surface-container-high text-on-surface shadow-sm"
-                  : "text-on-surface-variant hover:text-on-surface"
-              }`}
-            >
-              Settings
-            </button>
+            <div className="no-scrollbar flex items-center gap-1 bg-surface-variant/50 rounded-lg p-0.5 overflow-x-auto whitespace-nowrap">
+              <button onClick={() => setViewMode("ledger")} className={tabClass("ledger")}>
+                Ledger
+              </button>
+              <button onClick={() => setViewMode("payments")} className={tabClass("payments")}>
+                Payments{incomingPendingCount > 0 ? ` (${incomingPendingCount})` : ""}
+              </button>
+              <button onClick={() => setViewMode("graph")} className={tabClass("graph")}>
+                Debt map
+              </button>
+              <button onClick={() => setViewMode("settings")} className={tabClass("settings")}>
+                Settings
+              </button>
             </div>
             {pendingOnly && viewMode === "payments" && (
               <button onClick={clearPendingFilter} className="flex h-7 items-center gap-1 rounded-full bg-warning/10 px-2.5 text-[10px] font-bold text-warning transition-colors hover:bg-warning/20" title="Show payment history">
@@ -191,13 +287,25 @@ export function GroupDetailPage() {
                 <span className="material-symbols-outlined text-[14px]">close</span>
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setColumnOpen(!columnOpen)}
+              aria-pressed={columnOpen}
+              aria-label={columnOpen ? "Hide balances" : "Show balances"}
+              title={columnOpen ? "Hide balances" : "Show balances"}
+              className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:text-on-surface md:flex"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {columnOpen ? "right_panel_close" : "right_panel_open"}
+              </span>
+            </button>
           </div>
         </header>
 
         {viewMode === "ledger" ? (
-          <LedgerView 
+          <LedgerView
             transactions={transactions ?? []}
-            loading={txLoading} 
+            loading={txLoading}
             currency={group.currency}
           />
         ) : viewMode === "payments" ? (
@@ -223,166 +331,135 @@ export function GroupDetailPage() {
             <DebtGraph settlements={currentSettlements} members={group.members} currency={group.currency} />
           </Suspense>
         ) : (
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 max-w-3xl mx-auto w-full space-y-8 animate-fade-in">
+          <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 max-w-3xl mx-auto w-full space-y-8 animate-fade-in">
             <section>
               <h3 className="text-[16px] font-bold text-on-surface mb-4">Member access</h3>
               <RoleManager group={group} currentUserId={currentUserId} onRoleChanged={refetchGroup} />
             </section>
-            
+
             <section>
               <h3 className="text-[16px] font-bold text-on-surface mb-4">Group activity</h3>
               <AuditLogViewer groupId={group.id} />
             </section>
           </div>
         )}
-      </section>
 
-      {/* ── Right Panel ───────────────────── */}
-      <aside className="w-full md:w-[336px] bg-surface-container-low flex flex-col md:h-full overflow-y-auto shrink-0 border-t md:border-t-0 border-outline-variant/70">
-        {/* Actions */}
-        <div className="hidden md:flex p-5 flex-col gap-3 border-b border-outline-variant/70">
-          <button onClick={() => setShowExpenseModal(true)} className="btn-primary w-full">
-            <span className="material-symbols-outlined text-[16px]">add</span>
-            Add Expense
-          </button>
-          <button onClick={() => setShowSettleModal(true)} className="btn-secondary w-full">
-            <span className="material-symbols-outlined text-[16px]">handshake</span>
-            Settle Up
-          </button>
-          <div className="flex gap-2">
-            <button onClick={() => exportApi.downloadPdf(id!)} className="btn-secondary flex-1 !text-[11px] !px-1">
-              <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
-              PDF Report
-            </button>
-            <button onClick={() => exportApi.downloadCsv(id!)} className="btn-secondary flex-1 !text-[11px] !px-1">
-              <span className="material-symbols-outlined text-[14px]">table_chart</span>
-              CSV Ledger
-            </button>
-          </div>
-        </div>
-
-        {/* Balances */}
-        <div className="p-4 md:p-5 flex-1 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[13px] font-bold text-on-surface">Open balances</h3>
-          </div>
-
-          {/* Summary Card */}
-          <div className="rounded-2xl border border-outline-variant/70 bg-surface-container p-4 shadow-[0_8px_20px_rgba(31,35,54,0.04)] flex flex-col gap-1">
-            <span className="text-label text-[10px]">Group total</span>
-            <span className="text-data-lg text-secondary">{formatCurrency(totalOwed)}</span>
-            <span className="text-[11px] text-on-surface-variant mt-1">
-              {currentSettlements.length} settlement{currentSettlements.length !== 1 ? "s" : ""} needed
-            </span>
-          </div>
-
-          {/* Individual */}
-          <div className="flex flex-col gap-2">
-            {currentBalances.map((balance, i) => (
-              <div
-                key={balance.userId}
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-glass-hover transition-colors"
-              >
-                <div className={`avatar avatar-sm avatar-${i % 6}`}>
-                  {getInitials(balance.name)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-[13px] font-medium text-on-surface truncate block">{balance.name}</span>
-                </div>
-                <span
-                  className={`text-data font-semibold ${
-                    balance.netBalance > 0.01
-                      ? "text-positive"
-                      : balance.netBalance < -0.01
-                        ? "text-negative"
-                        : "text-neutral"
-                  }`}
-                >
-                  {balance.netBalance > 0.01 ? "+" : ""}{formatCurrency(balance.netBalance)}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Settlements Preview */}
-          {currentSettlements.length > 0 && (
-            <>
-              <div className="h-px bg-outline-variant/30 my-1" />
-              <h3 className="text-[13px] font-bold text-on-surface">Suggested settlements</h3>
-              <div className="flex flex-col gap-2">
-                {currentSettlements.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-surface-dim text-[12px]">
-                    <span className="font-medium text-on-surface">{s.fromName.split(" ")[0]}</span>
-                    <span className="material-symbols-outlined text-[14px] text-on-surface-variant">arrow_forward</span>
-                    <span className="font-medium text-on-surface">{s.toName.split(" ")[0]}</span>
-                    <span className="ml-auto text-data text-secondary font-semibold">{formatCurrency(s.amount, group.currency)}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Danger Zone — Admin Only */}
-          {isAdmin && (
-            <div className="mt-4 pt-4 border-t border-error/20 flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-error text-[16px]">warning</span>
-                <h3 className="text-section-title !text-error">Danger Zone</h3>
-              </div>
-              <button 
-                onClick={() => setShowDeleteModal(true)} 
-                className="btn-secondary w-full !border-error/20 !text-error hover:!bg-error hover:!text-on-error transition-colors"
-              >
-                <span className="material-symbols-outlined text-[16px]">delete</span>
-                Delete Group
+        {/* Actions on a phone. Anchored to the content rather than the screen,
+            so it rides above the balances sheet at whatever height that is. */}
+        <div className="absolute right-4 bottom-4 z-30 flex flex-col items-end gap-2 md:hidden">
+          {mobileActionsOpen && (
+            <div className="flex flex-col items-end gap-2 animate-slide-up">
+              <button onClick={() => { setShowExpenseModal(true); setMobileActionsOpen(false); }} className="btn-primary shadow-lg">
+                <span className="material-symbols-outlined text-[17px]">add</span>
+                Add Expense
+              </button>
+              <button onClick={() => { setShowSettleModal(true); setMobileActionsOpen(false); }} className="btn-secondary shadow-lg">
+                <span className="material-symbols-outlined text-[17px]">handshake</span>
+                Settle Up
+              </button>
+              <button onClick={() => exportApi.downloadPdf(id!)} className="btn-secondary shadow-lg">
+                <span className="material-symbols-outlined text-[17px]">picture_as_pdf</span>
+                PDF Report
+              </button>
+              <button onClick={() => exportApi.downloadCsv(id!)} className="btn-secondary shadow-lg">
+                <span className="material-symbols-outlined text-[17px]">table_chart</span>
+                CSV Ledger
               </button>
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => setMobileActionsOpen((isOpen) => !isOpen)}
+            aria-label={mobileActionsOpen ? "Close group actions" : "Open group actions"}
+            className="w-14 h-14 rounded-full bg-primary-container text-on-primary-container shadow-lg flex items-center justify-center transition-transform active:scale-95"
+          >
+            <span className="material-symbols-outlined text-[26px]">{mobileActionsOpen ? "close" : "add"}</span>
+          </button>
         </div>
+      </section>
 
-        {/* Status */}
-        <div className="p-4 border-t border-outline-variant/30 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              {connected && <span className="animate-sync-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />}
-              <span className={`relative inline-flex h-2 w-2 rounded-full ${connected ? "bg-secondary" : "bg-outline"}`} />
-            </span>
-            <span className="text-[11px] text-on-surface-variant font-medium">{connected ? "Updates live" : "Reconnecting"}</span>
-          </div>
-          {connected && <span className="text-[10px] text-on-surface-variant tabular-nums">{latency}ms</span>}
-        </div>
-      </aside>
-
-      <div className="fixed right-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-30 flex flex-col items-end gap-2 md:hidden">
-        {mobileActionsOpen && (
-          <div className="flex flex-col items-end gap-2 animate-slide-up">
-            <button onClick={() => { setShowExpenseModal(true); setMobileActionsOpen(false); }} className="btn-primary shadow-lg">
-              <span className="material-symbols-outlined text-[17px]">add</span>
+      {/* ── Balances ──────────────────────── */}
+      {!wide ? (
+        <aside className="flex shrink-0 flex-col border-t border-outline-variant/70 bg-surface-container-low pb-[env(safe-area-inset-bottom)]">
+          <SheetHandle open={sheetOpen} onChange={setSheetOpen} label="balances" />
+          {sheetOpen ? (
+            <div className="flex max-h-[46vh] flex-col overflow-y-auto">
+              {balancesBody}
+              {status}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSheetOpen(true)}
+              className="flex min-h-[44px] items-center justify-between gap-3 px-4 pb-2 text-left"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                {liveDot}
+                <span className="truncate text-[12px] font-medium text-on-surface">Open balances</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="text-data font-semibold text-secondary">{formatCurrency(totalOwed, group.currency)}</span>
+                <span className="text-[11px] text-on-surface-variant">
+                  {settlementCount === 0 ? "settled" : `${settlementCount} to settle`}
+                </span>
+                <span className="material-symbols-outlined text-[18px] text-on-surface-variant">expand_less</span>
+              </span>
+            </button>
+          )}
+        </aside>
+      ) : columnOpen ? (
+        <aside className="flex h-full w-[336px] shrink-0 flex-col overflow-y-auto bg-surface-container-low">
+          {/* Actions */}
+          <div className="flex p-5 flex-col gap-3 border-b border-outline-variant/70">
+            <button onClick={() => setShowExpenseModal(true)} className="btn-primary w-full">
+              <span className="material-symbols-outlined text-[16px]">add</span>
               Add Expense
             </button>
-            <button onClick={() => { setShowSettleModal(true); setMobileActionsOpen(false); }} className="btn-secondary shadow-lg">
-              <span className="material-symbols-outlined text-[17px]">handshake</span>
+            <button onClick={() => setShowSettleModal(true)} className="btn-secondary w-full">
+              <span className="material-symbols-outlined text-[16px]">handshake</span>
               Settle Up
             </button>
-            <button onClick={() => exportApi.downloadPdf(id!)} className="btn-secondary shadow-lg">
-              <span className="material-symbols-outlined text-[17px]">picture_as_pdf</span>
-              PDF Report
-            </button>
-            <button onClick={() => exportApi.downloadCsv(id!)} className="btn-secondary shadow-lg">
-              <span className="material-symbols-outlined text-[17px]">table_chart</span>
-              CSV Ledger
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => exportApi.downloadPdf(id!)} className="btn-secondary flex-1 !text-[11px] !px-1">
+                <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
+                PDF Report
+              </button>
+              <button onClick={() => exportApi.downloadCsv(id!)} className="btn-secondary flex-1 !text-[11px] !px-1">
+                <span className="material-symbols-outlined text-[14px]">table_chart</span>
+                CSV Ledger
+              </button>
+            </div>
           </div>
-        )}
-        <button
-          type="button"
-          onClick={() => setMobileActionsOpen((isOpen) => !isOpen)}
-          aria-label={mobileActionsOpen ? "Close group actions" : "Open group actions"}
-          className="w-14 h-14 rounded-full bg-primary-container text-on-primary-container shadow-lg flex items-center justify-center transition-transform active:scale-95"
-        >
-          <span className="material-symbols-outlined text-[26px]">{mobileActionsOpen ? "close" : "add"}</span>
-        </button>
-      </div>
+
+          {balancesBody}
+          {status}
+        </aside>
+      ) : (
+        // Folded, the column is a rail: the balances go, the actions stay.
+        <aside className="flex h-full w-14 shrink-0 flex-col items-center gap-1.5 bg-surface-container-low py-4">
+          <button
+            type="button"
+            onClick={() => setShowExpenseModal(true)}
+            aria-label="Add expense"
+            title="Add expense"
+            className="flex h-9 w-9 items-center justify-center rounded-[4px] bg-[#85c093] text-[#09352e] transition-[filter] hover:brightness-95"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+          </button>
+          <button type="button" onClick={() => setShowSettleModal(true)} aria-label="Settle up" title="Settle up" className={railButton}>
+            <span className="material-symbols-outlined text-[18px]">handshake</span>
+          </button>
+          <button type="button" onClick={() => exportApi.downloadPdf(id!)} aria-label="PDF report" title="PDF report" className={railButton}>
+            <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+          </button>
+          <button type="button" onClick={() => exportApi.downloadCsv(id!)} aria-label="CSV ledger" title="CSV ledger" className={railButton}>
+            <span className="material-symbols-outlined text-[18px]">table_chart</span>
+          </button>
+          <span className="mt-auto" title={connected ? "Updates live" : "Reconnecting"}>
+            {liveDot}
+          </span>
+        </aside>
+      )}
 
       {showExpenseModal && <ExpenseModal group={group} onClose={() => setShowExpenseModal(false)} onCreated={handleMutationDone} />}
       {showSettleModal && (
@@ -443,8 +520,8 @@ function LedgerView({ transactions, loading, currency }: LedgerViewProps) {
         <div className="col-span-2 text-label text-right">Amount</div>
       </div>
 
-      {/* Rows */}
-      <div className="flex flex-col">
+      {/* Rows. On a phone the last one has to clear the action button. */}
+      <div className="flex flex-col pb-20 md:pb-0">
         {transactions.map((tx, i) => (
           <div
             key={tx.id}

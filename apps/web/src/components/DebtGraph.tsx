@@ -2,7 +2,7 @@
 // Debt Network Graph — v2.1 with data sync fix
 // ──────────────────────────────────────────────
 
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -10,6 +10,7 @@ import {
   type Node,
   type Edge,
   type NodeProps,
+  type ReactFlowInstance,
   MarkerType,
   useNodesState,
   useEdgesState,
@@ -18,6 +19,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Settlement, GroupMember } from "../types/index";
+import { useMedia } from "../hooks/useMedia";
 
 interface DebtGraphProps {
   settlements: Settlement[];
@@ -139,7 +141,35 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
   useEffect(() => { setNodes(builtNodes); }, [builtNodes, setNodes]);
   useEffect(() => { setEdges(builtEdges); }, [builtEdges, setEdges]);
 
-  if (settlements.length === 0 && members.length > 0) {
+  // The map only fits itself once, on load. Its region changes size whenever
+  // the balances are folded away or brought back, and without a refit that
+  // leaves the nodes parked off screen.
+  const wrapper = useRef<HTMLDivElement>(null);
+  const flow = useRef<ReactFlowInstance<Node<NodeData>, Edge> | null>(null);
+  const settled = settlements.length === 0 && members.length > 0;
+  // A phone has no width to spend on margins.
+  const padding = useMedia("(max-width: 767px)") ? 0.12 : 0.3;
+
+  useEffect(() => {
+    const element = wrapper.current;
+    if (!element) return;
+
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        void flow.current?.fitView({ padding });
+      });
+    });
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [settled, padding]);
+
+  if (settled) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 animate-fade-in">
         <div className="w-16 h-16 rounded-2xl bg-glow-secondary flex items-center justify-center">
@@ -152,15 +182,16 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
   }
 
   return (
-    <div className="flex-1 min-h-[420px] md:min-h-0 relative">
+    <div ref={wrapper} className="flex-1 min-h-0 relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onInit={(instance) => { flow.current = instance; }}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.3 }}
+        fitViewOptions={{ padding }}
         minZoom={0.3}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
@@ -168,8 +199,9 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
         <Background variant={BackgroundVariant.Dots} gap={24} size={0.5} color="var(--color-outline-variant)" />
       </ReactFlow>
 
-      {/* Stats Overlay */}
-      <div className="absolute bottom-4 left-4 z-20 glass-panel-sm px-4 py-3 flex gap-6">
+      {/* Stats Overlay. On a phone the balances sheet under the map carries
+          the same totals, and the map needs the room more. */}
+      <div className="absolute bottom-4 left-4 z-20 glass-panel-sm px-4 py-3 hidden md:flex gap-6">
         <div>
           <div className="text-[10px] text-on-surface-variant uppercase font-medium">Settlements</div>
           <div className="text-data-lg text-on-surface">{settlements.length}</div>
