@@ -114,6 +114,7 @@
   --graph-ink-soft: #6c7a79;
   --graph-plate: #ffffff;
   --graph-grid: #cad3d2;
+  --graph-saved: #85c093;
 
   color-scheme: light;
 }
@@ -174,6 +175,7 @@
   --graph-ink-soft: #a89e99;
   --graph-plate: #29211e;
   --graph-grid: #403834;
+  --graph-saved: #85c093;
 
   color-scheme: dark;
 }

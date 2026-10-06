@@ -15,11 +15,25 @@ import { useEffect, useRef } from "react";
 
 export type EdgeState = "live" | "cleared" | "new" | "reduced";
 
+/** What the plan on screen means for one party when someone cannot pay. */
+export interface PartyFate {
+  failed: boolean;
+  /** Order it fails in. Later waves are revealed later. */
+  wave: number;
+  /** Would have failed as owed, and does not under this plan. */
+  saved: boolean;
+  /** Would have survived as owed, and does not under this plan. */
+  sunk: boolean;
+}
+
 export interface GraphParty {
   id: string;
   label: string;
   /** Positive = owed money, negative = owes money. Minor units. */
   net: number;
+  /** Where the party belongs across the stage, 0 to 1. Omit for a free layout. */
+  lane?: number;
+  fate?: PartyFate;
 }
 
 export interface GraphObligation {
@@ -27,6 +41,16 @@ export interface GraphObligation {
   to: string;
   amount: number;
   state: EdgeState;
+  /** Share of this obligation that will not be paid, 0 to 1. */
+  unpaid?: number;
+}
+
+/** Room to leave clear at each edge, for panels that float over the stage. */
+export interface StageInset {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
 }
 
 interface MoneyGraphProps {
@@ -36,6 +60,11 @@ interface MoneyGraphProps {
   quiet?: boolean;
   onSelect?: (partyId: string | null) => void;
   selected?: string | null;
+  /** Names for the lanes, drawn as axis labels. */
+  laneLabels?: string[];
+  inset?: StageInset;
+  /** Change this to play the cascade again from the first wave. */
+  replay?: number;
   className?: string;
 }
 
@@ -45,13 +74,29 @@ interface Node {
   net: number;
   /** Position on the seeding ring, used until the force layout takes over. */
   seat: number;
+  lane: number | null;
+  /** Position within its lane, for seeding. */
+  laneSeat: number;
+  laneSize: number;
+  /** True when the whole label fits on the plate and need not sit below it. */
+  inside: boolean;
   x: number;
   y: number;
   vx: number;
   vy: number;
+  /** Plate radius on a roomy stage. */
+  size: number;
+  /** Plate radius as drawn, after fitting to the stage it is actually on. */
   radius: number;
   /** Eases in so nodes do not pop when a network changes. */
   alpha: number;
+  fate: PartyFate | null;
+  /** 0 standing, 1 fallen. Eases toward the fate once its wave is due. */
+  fall: number;
+  /** When this party's wave reaches it, on the animation clock. */
+  fallsAt: number;
+  /** A ring that spreads from a party at the moment it falls. */
+  pulse: number;
 }
 
 interface Edge {
@@ -59,6 +104,7 @@ interface Edge {
   to: number;
   amount: number;
   state: EdgeState;
+  unpaid: number;
   /** Eases toward 1 for live edges, 0 for cleared ones. */
   alpha: number;
   width: number;
@@ -74,7 +120,12 @@ interface Palette {
   ink: string;
   inkSoft: string;
   plate: string;
+  saved: string;
 }
+
+/** Gap between one wave of failures and the next, so the cascade can be read. */
+const WAVE_MS = 420;
+const NO_INSET: StageInset = { top: 0, right: 0, bottom: 0, left: 0 };
 
 function readPalette(root: HTMLElement): Palette {
   const styles = getComputedStyle(root);
@@ -91,7 +142,78 @@ function readPalette(root: HTMLElement): Palette {
     ink: read("--graph-ink", "#e8edf4"),
     inkSoft: read("--graph-ink-soft", "#8b95a5"),
     plate: read("--graph-plate", "#12161c"),
+    saved: read("--graph-saved", "#85c093"),
   };
+}
+
+/**
+ * Decides the order of parties within each lane.
+ *
+ * Left alone, parties sit in whatever order they arrived and the obligations
+ * between lanes cross each other more than they need to. Sorting each lane by
+ * where its parties' counterparties sit in the other lanes, and repeating in
+ * both directions until it settles, is the standard way to untangle a layered
+ * drawing. It cannot remove every crossing, but it removes the gratuitous ones.
+ */
+function seatLanes(
+  parties: readonly GraphParty[],
+  obligations: readonly GraphObligation[]
+): Map<string, number> {
+  const laneOf = new Map<string, number>();
+  const lanes = new Map<number, string[]>();
+  for (const party of parties) {
+    if (party.lane === undefined) continue;
+    laneOf.set(party.id, party.lane);
+    const members = lanes.get(party.lane);
+    if (members) members.push(party.id);
+    else lanes.set(party.lane, [party.id]);
+  }
+
+  // Counterparties in other lanes. Same-lane obligations say nothing about
+  // which end of the lane a party belongs at.
+  const across = new Map<string, string[]>();
+  const link = (party: string, other: string): void => {
+    const known = across.get(party);
+    if (known) known.push(other);
+    else across.set(party, [other]);
+  };
+  for (const { from, to } of obligations) {
+    const a = laneOf.get(from);
+    const b = laneOf.get(to);
+    if (a === undefined || b === undefined || a === b) continue;
+    link(from, to);
+    link(to, from);
+  }
+
+  // Where each party sits along its lane, 0 to 1.
+  const along = new Map<string, number>();
+  const place = (members: string[]): void => {
+    members.forEach((id, i) => along.set(id, members.length > 1 ? i / (members.length - 1) : 0.5));
+  };
+  for (const members of lanes.values()) place(members);
+
+  const order = [...lanes.keys()].sort((a, b) => a - b);
+  for (let sweep = 0; sweep < 8; sweep += 1) {
+    const pass = sweep % 2 === 0 ? order : [...order].reverse();
+    for (const lane of pass) {
+      const members = lanes.get(lane)!;
+      const scored = members.map((id, i) => {
+        const others = across.get(id);
+        if (!others || others.length === 0) return { id, i, pull: along.get(id)! };
+        let sum = 0;
+        for (const other of others) sum += along.get(other)!;
+        return { id, i, pull: sum / others.length };
+      });
+      scored.sort((a, b) => a.pull - b.pull || a.i - b.i);
+      const sorted = scored.map((item) => item.id);
+      lanes.set(lane, sorted);
+      place(sorted);
+    }
+  }
+
+  const seats = new Map<string, number>();
+  for (const members of lanes.values()) members.forEach((id, i) => seats.set(id, i));
+  return seats;
 }
 
 /** Quadratic bezier evaluated at t. */
@@ -106,6 +228,9 @@ export function MoneyGraph({
   quiet = false,
   onSelect,
   selected = null,
+  laneLabels,
+  inset = NO_INSET,
+  replay = 0,
   className = "",
 }: MoneyGraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -118,41 +243,95 @@ export function MoneyGraph({
   const paletteRef = useRef<Palette | null>(null);
   const selectedRef = useRef<string | null>(selected);
   const quietRef = useRef(quiet);
+  const insetRef = useRef<StageInset>(inset);
+  const laneLabelsRef = useRef<string[] | undefined>(laneLabels);
   const wakeRef = useRef<(() => void) | null>(null);
+  const replayRef = useRef(replay);
+  const seatsRef = useRef<{ key: string; seats: Map<string, number> } | null>(null);
 
   // Mirrored into refs so the animation loop can read the latest values
   // without being torn down and rebuilt on every prop change.
   useEffect(() => {
     selectedRef.current = selected;
+    wakeRef.current?.();
   }, [selected]);
 
   useEffect(() => {
     quietRef.current = quiet;
   }, [quiet]);
 
+  useEffect(() => {
+    laneLabelsRef.current = laneLabels;
+  }, [laneLabels]);
+
+  const { top, right, bottom, left } = inset;
+  useEffect(() => {
+    insetRef.current = { top, right, bottom, left };
+    wakeRef.current?.();
+  }, [top, right, bottom, left]);
+
   // Rebuild the simulation when the network changes, keeping positions for
   // parties that already exist so the layout does not jump between modes.
   useEffect(() => {
     const previous = new Map(nodesRef.current.map((node) => [node.id, node]));
     const index = new Map<string, number>();
+    const now = performance.now();
+    const replaying = replayRef.current !== replay;
+    replayRef.current = replay;
 
     const largest = Math.max(1, ...parties.map((party) => Math.abs(party.net)));
+    // A crowded stage needs smaller plates or they start to touch.
+    const scale = parties.length > 40 ? 0.62 : parties.length > 14 ? 0.78 : 1;
+    // Short codes can be written on the plate itself. That needs a plate big
+    // enough to hold three characters, so the smallest ones grow a little.
+    const coded = parties.length > 14 && parties.length <= 40 && parties.every((party) => party.label.length <= 3);
+
+    const laneCount = new Map<number, number>();
+    for (const party of parties) {
+      if (party.lane !== undefined) laneCount.set(party.lane, (laneCount.get(party.lane) ?? 0) + 1);
+    }
+
+    // Seats are worked out once per network and then kept. Changing the plan
+    // changes which obligations exist, and re-sorting on that would shuffle
+    // every column each time a mode was picked.
+    const membership = parties.map((party) => party.id).join("\u0000");
+    if (seatsRef.current?.key !== membership) {
+      seatsRef.current = { key: membership, seats: seatLanes(parties, obligations) };
+    }
+    const seats = seatsRef.current.seats;
 
     const nodes: Node[] = parties.map((party, i) => {
       const kept = previous.get(party.id);
       const weight = Math.abs(party.net) / largest;
+      const fate = party.fate ?? null;
+      const failed = fate?.failed ?? false;
+      const laneSeat = seats.get(party.id) ?? 0;
+
+      // A party already down stays down across a mode change. One that has
+      // just been brought down waits for its wave, so the order reads.
+      const alreadyDown = (kept?.fall ?? 0) > 0.5 && !replaying;
+      const wave = Math.max(1, fate?.wave ?? 1);
 
       return {
         id: party.id,
         label: party.label,
         net: party.net,
         seat: i,
+        lane: party.lane ?? null,
+        laneSeat,
+        laneSize: party.lane !== undefined ? laneCount.get(party.lane) ?? 1 : 1,
         x: kept?.x ?? Number.NaN,
         y: kept?.y ?? Number.NaN,
         vx: kept?.vx ?? 0,
         vy: kept?.vy ?? 0,
-        radius: 10 + Math.sqrt(weight) * 15,
+        size: coded ? 11.5 + Math.sqrt(weight) * 9 : (10 + Math.sqrt(weight) * 15) * scale,
+        radius: kept?.radius ?? 0,
+        inside: coded,
         alpha: kept?.alpha ?? 0,
+        fate,
+        fall: replaying ? 0 : kept?.fall ?? 0,
+        fallsAt: failed && !alreadyDown ? now + 160 + (wave - 1) * WAVE_MS : now,
+        pulse: kept?.pulse ?? 0,
       };
     });
 
@@ -169,6 +348,7 @@ export function MoneyGraph({
         to,
         amount: item.amount,
         state: item.state,
+        unpaid: item.unpaid ?? 0,
         alpha: item.state === "new" ? 0 : 1,
         width: 0.7 + Math.sqrt(item.amount / heaviest) * 1.9,
       });
@@ -178,7 +358,7 @@ export function MoneyGraph({
     edgesRef.current = edges;
     indexRef.current = index;
     wakeRef.current?.();
-  }, [parties, obligations]);
+  }, [parties, obligations, replay]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -196,9 +376,11 @@ export function MoneyGraph({
     // Forces the physics pass to run even when the layout looks still, which
     // is how a resized stage gets its nodes back on screen.
     let settleFrames = 0;
+    let lastFrame = 0;
 
     const wake = (): void => {
       calmFrames = 0;
+      settleFrames = Math.max(settleFrames, 30);
       if (asleep && running) {
         asleep = false;
         frame = requestAnimationFrame(step);
@@ -245,6 +427,7 @@ export function MoneyGraph({
 
     const themeWatcher = new MutationObserver(() => {
       paletteRef.current = readPalette(document.documentElement);
+      wakeRef.current?.();
     });
     themeWatcher.observe(document.documentElement, {
       attributes: true,
@@ -264,10 +447,64 @@ export function MoneyGraph({
         return;
       }
 
-      const centreX = width / 2;
-      const centreY = height / 2;
+      // The stage is whatever the floating panels leave uncovered.
+      const pad = insetRef.current;
+      const stageLeft = Math.min(pad.left, width * 0.4);
+      const stageTop = Math.min(pad.top, height * 0.4);
+      const stageWidth = Math.max(160, width - stageLeft - Math.min(pad.right, width * 0.4));
+      const stageHeight = Math.max(160, height - stageTop - Math.min(pad.bottom, height * 0.4));
+      const centreX = stageLeft + stageWidth / 2;
+      const centreY = stageTop + stageHeight / 2;
 
-      let energy = 0;
+      // Plates shrink on a small stage, so a crowded network still has air
+      // in it on a phone.
+      const fit = Math.max(
+        0.6,
+        Math.min(1, Math.sqrt((stageWidth * stageHeight) / (Math.max(1, nodes.length) * 5200)))
+      );
+      for (const node of nodes) node.radius = node.size * fit;
+
+      // Lanes run across the stage when it is wide and down it when it is
+      // tall, so a supply chain reads the same way on a phone.
+      const laned = nodes.some((node) => node.lane !== null);
+      const across = stageWidth >= stageHeight * 0.9;
+      const laneMargin = across ? 44 : 40;
+      const laneAt = (lane: number): number =>
+        across
+          ? stageLeft + laneMargin + lane * (stageWidth - laneMargin * 2)
+          : stageTop + laneMargin + lane * (stageHeight - laneMargin * 2);
+
+      // ── Failures, one wave at a time ──────────────────────
+      // Eased by elapsed time rather than per frame. A browser that throttles
+      // a background tab to a frame a second would otherwise leave the
+      // cascade hanging half-drawn until the tab was looked at again.
+      const elapsed = lastFrame === 0 ? 16 : Math.min(400, time - lastFrame);
+      lastFrame = time;
+      const ease = 1 - Math.exp(-elapsed / 95);
+      const fade = Math.exp(-elapsed / 230);
+
+      let falling = 0;
+      for (const node of nodes) {
+        const target = node.fate?.failed ? 1 : 0;
+        if (reduceMotion) {
+          node.fall = target;
+          node.pulse = 0;
+          continue;
+        }
+        if (target === 1 && time < node.fallsAt) {
+          falling += 1;
+          continue;
+        }
+        const before = node.fall;
+        node.fall += (target - node.fall) * ease;
+        if (Math.abs(target - node.fall) < 0.004) node.fall = target;
+        if (target === 1 && before < 0.08 && node.fall >= 0.08) node.pulse = 1;
+        node.pulse *= fade;
+        if (node.pulse < 0.02) node.pulse = 0;
+        falling += Math.abs(target - node.fall) + node.pulse;
+      }
+
+      let energy = falling;
       for (const node of nodes) energy += node.vx * node.vx + node.vy * node.vy;
       for (const edge of edges) {
         const target = edge.state === "cleared" ? 0 : 1;
@@ -279,11 +516,32 @@ export function MoneyGraph({
       const stirring = energy > 0.05 || dragRef.current !== null || settleFrames > 0;
       calmFrames = stirring ? 0 : calmFrames + 1;
 
-      const span = Math.min(width, height);
-      const rest = Math.max(96, (span / Math.sqrt(nodes.length + 2)) * 0.92);
+      const span = Math.min(stageWidth, stageHeight);
+      const rest = Math.max(laned ? 64 : 96, (span / Math.sqrt(nodes.length + 2)) * 0.92);
+      // Breathing room between plates. Lanes pack parties in single file, so
+      // they are given less of it than a free layout.
+      const gap = laned ? 12 : rest * 0.42;
       const ring = span * 0.3;
+
+      // Where a party in a lane belongs: its lane across the stage, and its
+      // seat along it. A lane with more parties than fit in single file is
+      // dealt into two ranks, alternating.
+      const seatOf = (node: Node): [number, number] => {
+        const spread = (across ? stageHeight : stageWidth) * 0.86;
+        const middle = across ? centreY : centreX;
+        const along = middle + ((node.laneSeat + 0.5) / node.laneSize - 0.5) * spread;
+        const tight = spread / node.laneSize < node.radius * 2 + gap;
+        const rank = tight ? (node.laneSeat % 2 === 0 ? -1 : 1) * (node.radius + 2) : 0;
+        const lane = laneAt(node.lane ?? 0) + rank;
+        return across ? [lane, along] : [along, lane];
+      };
+
       for (const node of nodes) {
         if (!Number.isNaN(node.x)) continue;
+        if (node.lane !== null) {
+          [node.x, node.y] = seatOf(node);
+          continue;
+        }
         const angle = (node.seat / Math.max(1, nodes.length)) * Math.PI * 2 - Math.PI / 2;
         node.x = centreX + Math.cos(angle) * ring;
         node.y = centreY + Math.sin(angle) * ring;
@@ -306,7 +564,7 @@ export function MoneyGraph({
             dy = (Math.random() - 0.5) * 0.1;
             distance = 0.1;
           }
-          const push = (a.radius + b.radius + rest * 0.42) / distance;
+          const push = (a.radius + b.radius + gap) / distance;
           if (push > 1) {
             const force = (push - 1) * 1.15;
             const ux = dx / distance;
@@ -319,7 +577,9 @@ export function MoneyGraph({
         }
       }
 
-      if (stirring) for (const edge of edges) {
+      // In lanes every party has a seat, and springs would only pull the
+      // columns out of true.
+      if (stirring && !laned) for (const edge of edges) {
         if (edge.alpha < 0.05) continue;
         const a = nodes[edge.from]!;
         const b = nodes[edge.to]!;
@@ -338,14 +598,27 @@ export function MoneyGraph({
       const drag = dragRef.current;
       if (stirring) for (let i = 0; i < nodes.length; i += 1) {
         const node = nodes[i]!;
-        node.vx += (centreX - node.x) * 0.0022;
-        node.vy += (centreY - node.y) * 0.0022;
+        if (node.lane !== null) {
+          const [seatX, seatY] = seatOf(node);
+          node.vx += (seatX - node.x) * 0.03;
+          node.vy += (seatY - node.y) * 0.03;
+        } else {
+          node.vx += (centreX - node.x) * 0.0022;
+          node.vy += (centreY - node.y) * 0.0022;
+        }
         node.vx *= 0.86;
         node.vy *= 0.86;
 
         if (!drag || drag.node !== i) {
           node.x += node.vx;
           node.y += node.vy;
+          // Nothing drifts under a panel or off the stage.
+          const margin = node.radius + 4;
+          const floor = stageTop + stageHeight - margin - 14;
+          if (node.x < stageLeft + margin) node.x = stageLeft + margin;
+          if (node.x > stageLeft + stageWidth - margin) node.x = stageLeft + stageWidth - margin;
+          if (node.y < stageTop + margin) node.y = stageTop + margin;
+          if (node.y > floor) node.y = floor;
         }
         node.alpha += (1 - node.alpha) * 0.12;
       }
@@ -358,10 +631,31 @@ export function MoneyGraph({
       // ── Paint ─────────────────────────────────────────────
       context.clearRect(0, 0, width, height);
 
+      const labels = laneLabelsRef.current;
+      if (laned && labels && labels.length > 1) {
+        context.globalAlpha = 1;
+        context.fillStyle = palette.inkSoft;
+        context.font = '500 10px "JetBrains Mono", ui-monospace, monospace';
+        context.textBaseline = "top";
+        for (let i = 0; i < labels.length; i += 1) {
+          const position = laneAt(i / (labels.length - 1));
+          const text = `[ ${labels[i]!.toUpperCase().split("").join(" ")} ]`;
+          if (across) {
+            context.textAlign = "center";
+            context.fillText(text, position, stageTop + 2);
+          } else {
+            context.textAlign = "left";
+            context.fillText(text, stageLeft + 6, position - 30);
+          }
+        }
+      }
+
       const selectedIndex = selectedRef.current
         ? indexRef.current.get(selectedRef.current) ?? null
         : null;
       const focus = selectedIndex ?? hoverRef.current;
+      // On a crowded stage, names only appear where attention is.
+      const crowded = nodes.length > 40;
 
       for (const edge of edges) {
         if (edge.alpha < 0.02) continue;
@@ -384,17 +678,32 @@ export function MoneyGraph({
               ? palette.edgeReduced
               : palette.edge;
 
-        context.globalAlpha = edge.alpha * (involved ? 0.95 : 0.18);
+        // Money a fallen party owes is drawn as a broken line: it is still
+        // owed, and it is not coming.
+        const broken = edge.unpaid > 0.02 ? a.fall : 0;
+        const dense = edges.length > 60 && focus === null ? 0.5 : 0.95;
+
+        context.globalAlpha = edge.alpha * (involved ? dense : 0.12) * (1 - broken * 0.3);
         context.strokeStyle = stroke;
         context.lineWidth = edge.width;
+        if (broken > 0.5) context.setLineDash([2, 4]);
         context.beginPath();
         context.moveTo(a.x, a.y);
         context.quadraticCurveTo(cx, cy, b.x, b.y);
         context.stroke();
+        if (broken > 0.5) context.setLineDash([]);
 
-        // Money in motion: particles run debtor → creditor along the curve.
-        if (!quietRef.current && !reduceMotion && edge.state !== "cleared" && involved) {
-          const count = 1 + Math.min(3, Math.floor(edge.width));
+        // Money in motion: particles run debtor → creditor along the curve,
+        // thinned by however much of it will not arrive.
+        const arriving = 1 - edge.unpaid * broken;
+        if (
+          !quietRef.current &&
+          !reduceMotion &&
+          edge.state !== "cleared" &&
+          involved &&
+          arriving > 0.05
+        ) {
+          const count = Math.max(1, Math.round((1 + Math.min(3, Math.floor(edge.width))) * arriving));
           const speed = 0.00013;
           for (let i = 0; i < count; i += 1) {
             const t = ((time * speed + i / count) % 1 + 1) % 1;
@@ -416,23 +725,61 @@ export function MoneyGraph({
         const isFocus = focus === i;
         const tone =
           node.net > 0 ? palette.credit : node.net < 0 ? palette.debit : palette.neutral;
-
-        context.globalAlpha = node.alpha * (focus === null || isFocus ? 1 : 0.32);
+        const visible = node.alpha * (focus === null || isFocus ? 1 : 0.32);
 
         // A bone-white plate under a hairline stroke: a plotted specimen, not a
         // button. The system forbids shadows, so selection is a concentric ring.
+        context.globalAlpha = visible;
         context.fillStyle = palette.plate;
         context.beginPath();
         context.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
         context.fill();
 
-        context.strokeStyle = tone;
+        // A fallen party is the same plate inked in. No new colour: failure
+        // is shown as the absence of light, which keeps the one alarm hue
+        // meaning one thing.
+        if (node.fall > 0.01) {
+          context.globalAlpha = visible * node.fall;
+          context.fillStyle = palette.ink;
+          context.beginPath();
+          context.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+          context.fill();
+        }
+
+        context.globalAlpha = visible;
+        context.strokeStyle = node.fall > 0.5 ? palette.ink : tone;
         context.lineWidth = 1;
+        context.beginPath();
+        context.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
         context.stroke();
+
+        if (node.pulse > 0) {
+          context.globalAlpha = visible * node.pulse * 0.55;
+          context.strokeStyle = palette.ink;
+          context.lineWidth = 1;
+          context.beginPath();
+          context.arc(node.x, node.y, node.radius + (1 - node.pulse) * 26, 0, Math.PI * 2);
+          context.stroke();
+        }
+
+        // What this plan did to the party, relative to leaving things alone.
+        // Moss for a rescue. The alarm hue for a party the plan itself sank,
+        // which is the same kind of harm as being handed a stranger.
+        const sunk = node.fate?.sunk ? node.fall : 0;
+        if (node.fate?.saved || sunk > 0.05) {
+          context.globalAlpha = visible * (node.fate?.saved ? 1 : sunk);
+          context.strokeStyle = node.fate?.saved ? palette.saved : palette.edgeNew;
+          context.lineWidth = 2;
+          context.beginPath();
+          context.arc(node.x, node.y, node.radius + 4, 0, Math.PI * 2);
+          context.stroke();
+        }
+
+        context.globalAlpha = visible;
 
         // Filled centre marks a creditor; a debtor stays hollow. Larger nodes
         // carry initials instead, so the dot would only collide with them.
-        if (node.net > 0 && node.radius <= 13) {
+        if (node.net > 0 && node.radius <= 13 && node.fall < 0.5 && !node.inside) {
           context.fillStyle = tone;
           context.beginPath();
           context.arc(node.x, node.y, Math.max(1.8, node.radius * 0.3), 0, Math.PI * 2);
@@ -440,28 +787,37 @@ export function MoneyGraph({
         }
 
         if (isFocus) {
-          context.strokeStyle = tone;
+          context.strokeStyle = node.fall > 0.5 ? palette.ink : tone;
           context.lineWidth = 1;
           context.setLineDash([2, 3]);
           context.beginPath();
-          context.arc(node.x, node.y, node.radius + 7, 0, Math.PI * 2);
+          context.arc(node.x, node.y, node.radius + 8.5, 0, Math.PI * 2);
           context.stroke();
           context.setLineDash([]);
         }
 
-        if (node.radius > 13) {
-          context.fillStyle = palette.ink;
+        if (node.inside) {
+          const size = node.radius * (node.label.length > 2 ? 0.62 : 0.74);
+          context.fillStyle = node.fall > 0.5 ? palette.plate : palette.ink;
+          context.font = `600 ${Math.max(8, Math.round(size))}px Inter, system-ui, sans-serif`;
+          context.textAlign = "center";
+          context.textBaseline = "middle";
+          context.fillText(node.label, node.x, node.y + 0.5);
+        } else if (node.radius > 13) {
+          context.fillStyle = node.fall > 0.5 ? palette.plate : palette.ink;
           context.font = `600 ${Math.round(node.radius * 0.72)}px Inter, system-ui, sans-serif`;
           context.textAlign = "center";
           context.textBaseline = "middle";
           context.fillText(node.label.slice(0, 2).toUpperCase(), node.x, node.y);
         }
 
-        context.fillStyle = isFocus ? palette.ink : palette.inkSoft;
-        context.font = '500 11px "JetBrains Mono", ui-monospace, monospace';
-        context.textAlign = "center";
-        context.textBaseline = "top";
-        context.fillText(node.label, node.x, node.y + node.radius + 6);
+        if (!node.inside && (!crowded || isFocus)) {
+          context.fillStyle = isFocus ? palette.ink : palette.inkSoft;
+          context.font = '500 11px "JetBrains Mono", ui-monospace, monospace';
+          context.textAlign = "center";
+          context.textBaseline = "top";
+          context.fillText(node.label, node.x, node.y + node.radius + 6);
+        }
       }
 
       context.globalAlpha = 1;
@@ -531,8 +887,12 @@ export function MoneyGraph({
         }
         return;
       }
-      hoverRef.current = pick(event);
-      canvas.style.cursor = hoverRef.current === null ? "default" : "grab";
+      const hit = pick(event);
+      if (hit !== hoverRef.current) {
+        hoverRef.current = hit;
+        wake();
+      }
+      canvas.style.cursor = hit === null ? "default" : "grab";
     };
 
     const onPointerUp = (event: PointerEvent): void => {
