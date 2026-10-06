@@ -61,11 +61,12 @@ If the Render service URL changes, update both `apps/web/vercel.json` and `VITE_
 5. Deploy Vercel.
 6. In a private browser window, register, reload the page, create a group, add an expense, and log out.
 7. With two test accounts, mark a suggested payment sent and confirm it from the recipient account.
-8. Check desktop and mobile layouts, `/demo`, ledger pagination, CSV/PDF export, and the browser console.
+8. Signed out, open the site and confirm both sample networks draw and every clearing mode switches without a network request.
+9. Check desktop and mobile layouts in both themes, including folding the panels away and bringing them back, then ledger pagination, CSV/PDF export, and the browser console.
 
 ## 4. Performance expectations
 
-The dashboard now uses one consolidated API response and the ledger uses a paginated feed rather than loading every group separately. Inactive ledger tabs do not fetch in the background.
+The graph asks for the selected group's obligations in one request and warms the other groups only after that has landed. Clearing itself runs in the browser, so switching modes or samples never touches the API. The ledger uses a paginated feed rather than loading every group separately, and inactive ledger tabs do not fetch in the background.
 
 Render's free web service can spin down after idle time, so its first request can still take roughly a minute. That delay cannot be removed by frontend code; use an always-on paid instance for a product reliability target.
 

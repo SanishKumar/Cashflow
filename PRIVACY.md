@@ -1,6 +1,6 @@
 # Privacy notice
 
-Last updated: July 13, 2026
+Last updated: October 6, 2026
 
 CashFlow is an open-source public beta for shared-expense records. This notice describes the behavior of the hosted application at `cashflow-phi-amber.vercel.app`; a self-hosted operator controls their own deployment and data practices.
 
@@ -13,9 +13,15 @@ CashFlow is an open-source public beta for shared-expense records. This notice d
 
 The app does not ask for or store bank credentials, card numbers, or payment-account access because it does not move money.
 
-## Demo data
+## Sample networks
 
-The `/demo` experience is separate from user accounts. Its fictional group and any changes you make are held only in the current browser tab and are not sent to the CashFlow API.
+The graph opens on two sample networks, a group of friends and a supply chain, and neither needs an account. Both are generated in your browser, and so is every clearing result shown for them. Nothing you do with a sample is sent to the CashFlow API.
+
+Clearing runs in the browser for real groups too. A signed-in group's obligations are fetched from the API like any other group data; working out what cancels, and who would be exposed if someone could not pay, happens on your device.
+
+## What stays in your browser
+
+The app keeps a few interface preferences in your browser's local storage: the light or dark theme, and which panels you left open or folded away. They are not sent to the server, and clearing the site's data removes them. Access tokens are held in memory only and are never written to local storage.
 
 ## Receipt OCR
 
