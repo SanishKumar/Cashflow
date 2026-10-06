@@ -637,15 +637,26 @@ export function MoneyGraph({
         context.fillStyle = palette.inkSoft;
         context.font = '500 10px "JetBrains Mono", ui-monospace, monospace';
         context.textBaseline = "top";
+        context.textAlign = "center";
+        const room = Math.abs(laneAt(1 / (labels.length - 1)) - laneAt(0)) - 10;
         for (let i = 0; i < labels.length; i += 1) {
           const position = laneAt(i / (labels.length - 1));
-          const text = `[ ${labels[i]!.toUpperCase().split("").join(" ")} ]`;
+          const name = labels[i]!.toUpperCase();
+          // Letterspaced with hair spaces where there is room for it, closed
+          // up where the lanes are too near for the labels not to touch.
+          const spaced = `[ ${name.split("").join(" ")} ]`;
+          const text = context.measureText(spaced).width <= room ? spaced : `[${name}]`;
           if (across) {
-            context.textAlign = "center";
             context.fillText(text, position, stageTop + 2);
           } else {
-            context.textAlign = "left";
-            context.fillText(text, stageLeft + 6, position - 30);
+            // Down a tall stage the lanes are rows, and a label above a row
+            // ends up underneath its plates. It runs up the left margin
+            // instead, the way the title of an axis does.
+            context.save();
+            context.translate(stageLeft + 3, position);
+            context.rotate(-Math.PI / 2);
+            context.fillText(text, 0, 0);
+            context.restore();
           }
         }
       }
