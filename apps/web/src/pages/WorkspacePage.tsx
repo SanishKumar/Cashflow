@@ -10,6 +10,13 @@
  * area and the same panels become a tabbed sheet below it. An earlier build
  * simply hid the panels under `lg`, which left a phone showing a pretty graph
  * and none of the numbers that give it meaning.
+ *
+ * Either way the panels can be put away. The graph is the thing people came
+ * to look at, and on a phone the sheet was taking half the screen from it; a
+ * handle folds it down to a strip that still switches modes and still says
+ * what the plan does. On a wide screen each panel has its own toggle. The
+ * choice is remembered, because someone who wants the graph full screen wants
+ * it that way next time too.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -22,6 +29,9 @@ import { useUser } from "../contexts/UserContext";
 import type { Group } from "../types/index";
 import { EnginePanel } from "../components/EnginePanel";
 import { LedgerPanel } from "../components/LedgerPanel";
+import { SheetHandle } from "../components/SheetHandle";
+import { useMedia } from "../hooks/useMedia";
+import { useStoredFlag } from "../hooks/useStoredFlag";
 import {
   MoneyGraph,
   type GraphObligation,
@@ -93,19 +103,6 @@ function useMoney(currency: string) {
   }, [currency]);
 }
 
-/** Tracks a media query, so the stage knows which panels are floating over it. */
-function useMedia(query: string): boolean {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const media = window.matchMedia(query);
-    const update = (): void => setMatches(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, [query]);
-  return matches;
-}
-
 export function WorkspacePage() {
   const { currentUserId, currentUser } = useUser();
 
@@ -124,6 +121,18 @@ export function WorkspacePage() {
 
   const wide = useMedia("(min-width: 1024px)");
   const widest = useMedia("(min-width: 1280px)");
+  const tall = useMedia("(min-height: 900px)");
+
+  // Which panels are out. Until someone chooses: on a phone the sheet starts
+  // folded, because open it leaves the graph half a screen; a tablet has the
+  // height for both. On a desk the ledger is out, and the engine panel only
+  // where there is room for it beside the ledger without squeezing the graph.
+  const [sheetChoice, setSheetOpen] = useStoredFlag("cashflow.workspace.sheet");
+  const [ledgerChoice, setLedgerOpen] = useStoredFlag("cashflow.workspace.ledger");
+  const [engineChoice, setEngineOpen] = useStoredFlag("cashflow.workspace.engine");
+  const sheetOpen = sheetChoice ?? tall;
+  const ledgerOpen = ledgerChoice ?? true;
+  const engineOpen = engineChoice ?? widest;
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -236,6 +245,19 @@ export function WorkspacePage() {
 
   const mode: ViewMode = view === "solvent" && !hasCash ? "cycles" : view;
 
+  // Folded, the modes are a strip that scrolls sideways, and the one in force
+  // may have been chosen while the sheet was open. Bring it back into view.
+  const stripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const strip = stripRef.current;
+    const active = strip?.querySelector<HTMLElement>(".chip-active");
+    if (!strip || !active) return;
+    const box = strip.getBoundingClientRect();
+    const chip = active.getBoundingClientRect();
+    if (chip.left < box.left) strip.scrollLeft += chip.left - box.left - 12;
+    else if (chip.right > box.right) strip.scrollLeft += chip.right - box.right + 12;
+  }, [mode, sheetOpen, hasCash]);
+
   const analysis = useMemo(
     () => analyse(stage.obligations, stage.cash, shocked),
     [stage.obligations, stage.cash, shocked]
@@ -303,9 +325,9 @@ export function WorkspacePage() {
   const inset = useMemo<StageInset>(
     () =>
       wide
-        ? { top: 92, left: 276, right: widest ? 328 : 16, bottom: 76 }
+        ? { top: 92, left: ledgerOpen ? 276 : 16, right: engineOpen ? 328 : 16, bottom: 76 }
         : { top: 54, left: 8, right: 8, bottom: 8 },
-    [wide, widest]
+    [wide, ledgerOpen, engineOpen]
   );
 
   const ledger = (
@@ -342,37 +364,84 @@ export function WorkspacePage() {
 
   const modes = MODES.filter((option) => option.id !== "solvent" || hasCash);
 
-  const modeSwitch = (
-    <div className={`grid gap-1.5 lg:flex lg:items-center ${modes.length > 3 ? "grid-cols-2" : "grid-cols-3"}`}>
-      {modes.map((option) => {
-        const failing = analysis.plans[option.id]?.outcome?.failed.length;
-        return (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => setView(option.id)}
-            title={option.hint}
-            className={`chip justify-center whitespace-nowrap ${
-              mode === option.id ? "chip-active" : ""
+  const modeButtons = modes.map((option) => {
+    const failing = analysis.plans[option.id]?.outcome?.failed.length;
+    return (
+      <button
+        key={option.id}
+        type="button"
+        onClick={() => setView(option.id)}
+        title={option.hint}
+        className={`chip shrink-0 justify-center whitespace-nowrap ${
+          mode === option.id ? "chip-active" : ""
+        }`}
+      >
+        {option.label}
+        {/* How many cannot pay under each plan, so the comparison is on
+            the control that makes it. */}
+        {hasCash && failing !== undefined && (
+          <span
+            className={`font-mono text-[11px] tabular-nums tracking-normal ${
+              mode === option.id ? "opacity-70" : "text-on-surface-variant"
             }`}
           >
-            {option.label}
-            {/* How many cannot pay under each plan, so the comparison is on
-                the control that makes it. */}
-            {hasCash && failing !== undefined && (
-              <span
-                className={`font-mono text-[11px] tabular-nums tracking-normal ${
-                  mode === option.id ? "opacity-70" : "text-on-surface-variant"
-                }`}
-              >
-                {failing}
-              </span>
-            )}
-          </button>
-        );
-      })}
+            {failing}
+          </span>
+        )}
+      </button>
+    );
+  });
+
+  const modeSwitch = (
+    <div
+      className={`grid gap-1.5 lg:flex lg:items-center ${
+        modes.length > 3 ? "grid-cols-2" : "grid-cols-3"
+      }`}
+    >
+      {modeButtons}
     </div>
   );
+
+  // With the sheet folded away the modes sit in one line that scrolls
+  // sideways, so the strip stays a strip however many modes there are.
+  const modeStrip = (
+    <div ref={stripRef} className="no-scrollbar flex gap-1.5 overflow-x-auto">
+      {modeButtons}
+    </div>
+  );
+
+  // What the folded sheet says in place of the panels: enough to know what
+  // the plan on screen does without opening anything.
+  const unable = plan.outcome?.failed.length;
+  const chosen = analysis.parties.find((party) => party.id === selected);
+  const chosenFate = chosen ? fates.get(chosen.id) : undefined;
+  const summary = pending
+    ? "Loading obligations…"
+    : !hasData
+      ? "Nothing outstanding here."
+      : chosen
+        ? [
+            chosen.id === myName ? "You" : chosen.id,
+            `${chosen.net > 0 ? "+" : ""}${money(chosen.net)} net`,
+            chosenFate?.failed ? "can’t pay" : chosenFate?.saved ? "saved by this plan" : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : [
+            mode === "original"
+              ? `${money(analysis.gross)} over ${analysis.payments} ${
+                  stage.nouns.debt[analysis.payments === 1 ? 0 : 1]
+                }`
+              : `${money(plan.cleared)} cancelled, ${plan.payments} ${
+                  plan.payments === 1 ? "payment" : "payments"
+                } left`,
+            unable !== undefined && (hasCash || unable > 0) ? `${unable} can’t pay` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ");
+
+  const panelToggle =
+    "pointer-events-auto hidden h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[4px] text-on-surface-variant shadow-[inset_0_0_0_1px_var(--color-outline-variant)] transition-colors hover:text-on-surface hover:shadow-[inset_0_0_0_1px_var(--color-on-surface)] lg:flex";
 
   return (
     <div className="stage flex h-full w-full flex-col overflow-hidden">
@@ -399,8 +468,21 @@ export function WorkspacePage() {
           </div>
         )}
 
-        {/* Which network is plotted */}
+        {/* Which network is plotted, and on a wide screen, which panels are out */}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
+          <button
+            type="button"
+            onClick={() => setLedgerOpen(!ledgerOpen)}
+            aria-pressed={ledgerOpen}
+            aria-label={ledgerOpen ? "Hide the ledger" : "Show the ledger"}
+            title={ledgerOpen ? "Hide the ledger" : "Show the ledger"}
+            className={panelToggle}
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {ledgerOpen ? "left_panel_close" : "left_panel_open"}
+            </span>
+          </button>
+
           <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-1.5 no-scrollbar overflow-x-auto pb-1">
             {currentUserId &&
               groups.map((item) => (
@@ -441,15 +523,32 @@ export function WorkspacePage() {
               Use my group
             </Link>
           )}
+
+          <button
+            type="button"
+            onClick={() => setEngineOpen(!engineOpen)}
+            aria-pressed={engineOpen}
+            aria-label={engineOpen ? "Hide the engine panel" : "Show the engine panel"}
+            title={engineOpen ? "Hide the engine panel" : "Show the engine panel"}
+            className={panelToggle}
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {engineOpen ? "right_panel_close" : "right_panel_open"}
+            </span>
+          </button>
         </div>
 
-        {/* Control room — wide screens only */}
-        <aside className="layer absolute bottom-6 left-4 top-24 hidden w-[248px] flex-col overflow-hidden lg:flex">
-          {ledger}
-        </aside>
-        <aside className="layer absolute bottom-6 right-4 top-24 hidden w-[300px] flex-col overflow-hidden xl:flex">
-          {engine}
-        </aside>
+        {/* Control room — wide screens only, and only the panels that are out */}
+        {ledgerOpen && (
+          <aside className="layer absolute bottom-6 left-4 top-24 hidden w-[248px] flex-col overflow-hidden lg:flex">
+            {ledger}
+          </aside>
+        )}
+        {engineOpen && (
+          <aside className="layer absolute bottom-6 right-4 top-24 hidden w-[300px] flex-col overflow-hidden lg:flex">
+            {engine}
+          </aside>
+        )}
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden justify-center p-5 lg:flex">
           <div className="layer-lifted pointer-events-auto p-1.5">{modeSwitch}</div>
@@ -457,42 +556,59 @@ export function WorkspacePage() {
       </div>
 
       {/* ── Sheet — narrow screens ───────────────────── */}
-      <div className="flex shrink-0 flex-col border-t border-outline-variant bg-surface lg:hidden">
-        <div className="px-3 pt-3">{modeSwitch}</div>
+      <div className="flex shrink-0 flex-col border-t border-outline-variant bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
+        <SheetHandle open={sheetOpen} onChange={setSheetOpen} label="details" />
 
-        <div className="mt-3 flex items-center gap-1 border-b border-outline-variant px-3">
-          {(
-            [
-              { id: "engine", label: "Result" },
-              { id: "ledger", label: stage.nouns.party[1] },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setSheet(tab.id)}
-              className={`-mb-px border-b-2 px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] transition-colors ${
-                sheet === tab.id
-                  ? "border-[#85c093] text-on-surface"
-                  : "border-transparent text-on-surface-variant"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <div className="px-3">{sheetOpen ? modeSwitch : modeStrip}</div>
 
-        <div className="flex h-[36vh] min-h-[190px] flex-col overflow-hidden">
-          {!hasData ? (
-            <p className="px-4 py-8 text-center text-[12px] text-on-surface-variant">
-              {pending ? "Loading obligations…" : "Nothing outstanding here."}
-            </p>
-          ) : sheet === "ledger" ? (
-            ledger
-          ) : (
-            engine
-          )}
-        </div>
+        {sheetOpen ? (
+          <>
+            <div className="mt-3 flex items-center gap-1 border-b border-outline-variant px-3">
+              {(
+                [
+                  { id: "engine", label: "Result" },
+                  { id: "ledger", label: stage.nouns.party[1] },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSheet(tab.id)}
+                  className={`-mb-px border-b-2 px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.14em] transition-colors ${
+                    sheet === tab.id
+                      ? "border-[#85c093] text-on-surface"
+                      : "border-transparent text-on-surface-variant"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex h-[34vh] min-h-[190px] flex-col overflow-hidden">
+              {!hasData ? (
+                <p className="px-4 py-8 text-center text-[12px] text-on-surface-variant">
+                  {pending ? "Loading obligations…" : "Nothing outstanding here."}
+                </p>
+              ) : sheet === "ledger" ? (
+                ledger
+              ) : (
+                engine
+              )}
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="flex min-h-[44px] items-center justify-between gap-3 px-4 py-2 text-left"
+          >
+            <span className="min-w-0 truncate text-[12px] text-on-surface">{summary}</span>
+            <span className="material-symbols-outlined shrink-0 text-[18px] text-on-surface-variant">
+              expand_less
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );
