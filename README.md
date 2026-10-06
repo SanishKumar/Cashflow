@@ -13,9 +13,9 @@
 
 </div>
 
-![CashFlow: switching between as-owed, loop clearing and full simplify, then the group ledger and debt map](docs/demo.gif)
+![CashFlow: a group's debts as owed, with loops cancelled, then fully simplified; a supply chain where six firms cannot pay, and the plan that keeps three of them solvent; then the panels folded away](docs/demo.gif)
 
-<sub>Real data, real engine. Eight IOUs, $528 outstanding — $190 of it cancels with nobody paying and nobody owing a stranger.</sub>
+<sub>Real data, real engine. Eight IOUs, $528 outstanding — $190 of it cancels with nobody paying and nobody owing a stranger. Then the sample supply chain: six firms can't pay as things stand, and choosing what to cancel gets that down to three.</sub>
 
 ---
 
