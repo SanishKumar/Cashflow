@@ -2,7 +2,7 @@
 // Debt Network Graph — v2.1 with data sync fix
 // ──────────────────────────────────────────────
 
-import { useMemo, useEffect, useRef } from "react";
+import { Fragment, useMemo, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -33,6 +33,25 @@ function getInitials(name: string): string {
 
 // ── Custom Node ────────────────────────────────
 
+const HANDLE = "!bg-primary !border-surface-container !w-2.5 !h-2.5 !rounded-full";
+
+const SIDES = [
+  { side: "top", position: Position.Top },
+  { side: "right", position: Position.Right },
+  { side: "bottom", position: Position.Bottom },
+  { side: "left", position: Position.Left },
+] as const;
+
+type Side = (typeof SIDES)[number]["side"];
+
+/** The side of a card that faces another, and the side of the other that faces back. */
+function facing(from: { x: number; y: number }, to: { x: number; y: number }): [Side, Side] {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? ["right", "left"] : ["left", "right"];
+  return dy > 0 ? ["bottom", "top"] : ["top", "bottom"];
+}
+
 interface NodeData {
   label: string;
   initials: string;
@@ -50,10 +69,14 @@ function EntityNode({ data }: NodeProps<Node<NodeData>>) {
 
   return (
     <div className="glass-panel p-4 w-[200px] cursor-grab active:cursor-grabbing hover:border-outline transition-colors">
-      <Handle type="target" position={Position.Top} className="!bg-primary !border-surface-container !w-2.5 !h-2.5 !rounded-full" />
-      <Handle type="source" position={Position.Bottom} className="!bg-primary !border-surface-container !w-2.5 !h-2.5 !rounded-full" />
-      <Handle type="target" position={Position.Left} className="!bg-primary !border-surface-container !w-2.5 !h-2.5 !rounded-full" />
-      <Handle type="source" position={Position.Right} className="!bg-primary !border-surface-container !w-2.5 !h-2.5 !rounded-full" />
+      {/* A way in and a way out on every side, so a debt can leave from the
+          side that faces whoever it is owed to. */}
+      {SIDES.map(({ side, position }) => (
+        <Fragment key={side}>
+          <Handle id={`in-${side}`} type="target" position={position} className={HANDLE} />
+          <Handle id={`out-${side}`} type="source" position={position} className={HANDLE} />
+        </Fragment>
+      ))}
 
       <div className="flex items-center gap-3 mb-3">
         <div className={`avatar avatar-md avatar-${data.colorIndex % 6}`}>
@@ -118,21 +141,30 @@ export function DebtGraph({ settlements, members, currency }: DebtGraphProps) {
     [members, getPos, netExposure, currency]
   );
 
-  const builtEdges: Edge[] = useMemo(() =>
-    settlements.map((s, i) => ({
-      id: `e-${i}`,
-      source: s.from,
-      target: s.to,
-      animated: true,
-      label: new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(s.amount),
-      labelStyle: { fill: "var(--color-on-surface)", fontFamily: "ui-monospace, Cascadia Code, Consolas, monospace", fontSize: 11, fontWeight: 600 },
-      labelBgStyle: { fill: "var(--color-surface-container)", stroke: "var(--color-outline-variant)", strokeWidth: 1, rx: 6, ry: 6 },
-      labelBgPadding: [8, 4] as [number, number],
-      style: { stroke: s.amount > 500 ? "var(--color-tertiary)" : "var(--color-primary)", strokeWidth: Math.max(1.5, Math.min(3, s.amount / 300)) },
-      markerEnd: { type: MarkerType.ArrowClosed, color: s.amount > 500 ? "var(--color-tertiary)" : "var(--color-primary)", width: 18, height: 18 },
-    })),
-    [settlements, currency]
-  );
+  const builtEdges: Edge[] = useMemo(() => {
+    const seats = new Map(members.map((m, i) => [m.userId, getPos(i)]));
+
+    return settlements.map((s, i) => {
+      const from = seats.get(s.from);
+      const to = seats.get(s.to);
+      const [out, into] = from && to ? facing(from, to) : (["bottom", "top"] as const);
+
+      return {
+        id: `e-${i}`,
+        source: s.from,
+        target: s.to,
+        sourceHandle: `out-${out}`,
+        targetHandle: `in-${into}`,
+        animated: true,
+        label: new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(s.amount),
+        labelStyle: { fill: "var(--color-on-surface)", fontFamily: "ui-monospace, Cascadia Code, Consolas, monospace", fontSize: 11, fontWeight: 600 },
+        labelBgStyle: { fill: "var(--color-surface-container)", stroke: "var(--color-outline-variant)", strokeWidth: 1, rx: 6, ry: 6 },
+        labelBgPadding: [8, 4] as [number, number],
+        style: { stroke: s.amount > 500 ? "var(--color-tertiary)" : "var(--color-primary)", strokeWidth: Math.max(1.5, Math.min(3, s.amount / 300)) },
+        markerEnd: { type: MarkerType.ArrowClosed, color: s.amount > 500 ? "var(--color-tertiary)" : "var(--color-primary)", width: 18, height: 18 },
+      };
+    });
+  }, [settlements, members, getPos, currency]);
 
   // FIX: Sync state when props change — useNodesState initial value is only read once
   const [nodes, setNodes, onNodesChange] = useNodesState(builtNodes);
