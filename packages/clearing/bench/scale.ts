@@ -5,8 +5,10 @@
  * run at, and re-verifies every answer from its certificate so the figures
  * are checked rather than just fast.
  *
- * Run with: npm run bench:scale --workspace=@cashflow/clearing
- * Add a word from a network's name to run only that one.
+ * Run with: npm run bench:scale
+ * Add a word from a network's name to run only that one. The national
+ * invoice register takes several minutes and only runs that way:
+ *   npm run bench:scale register
  */
 
 import { maximiseCirculation } from "../src/circulation.js";
@@ -26,6 +28,8 @@ interface Scale extends NetworkSpec {
   cancelling: boolean;
   /** Simplex is skipped where it would take minutes. */
   simplex: boolean;
+  /** Takes minutes, so it only runs when asked for by name. */
+  onRequest?: boolean;
 }
 
 const SCALES: Scale[] = [
@@ -76,6 +80,7 @@ const SCALES: Scale[] = [
     seed: 23,
     cancelling: false,
     simplex: false,
+    onRequest: true,
   },
 ];
 
@@ -110,7 +115,7 @@ function time(
 console.log("\nExact cycle clearing at scale\n");
 
 for (const scale of SCALES) {
-  if (only && !scale.name.includes(only)) continue;
+  if (only ? !scale.name.includes(only) : scale.onRequest) continue;
 
   const obligations = generateNetwork(scale);
   const graph = buildGraph(obligations);
