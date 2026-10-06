@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Multilateral obligation-clearing engine: cycle-restricted netting and path-enabled compensation over an obligation graph",
+  "description": "Multilateral obligation-clearing engine: exact cycle netting with certificates, path compensation, default cascades and solvency-aware clearing",
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",

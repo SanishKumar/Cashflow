@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Verified group-expense settlements with recipient confirmation and exact balancing",
+  "description": "Shared-expense app built around a multilateral obligation-clearing engine",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -22,8 +22,9 @@
     "bench:clearing": "npm run bench --workspace=@cashflow/clearing",
     "bench:scale": "npm run bench:scale --workspace=@cashflow/clearing --",
     "bench:rescue": "npm run bench:rescue --workspace=@cashflow/clearing",
+    "typecheck:clearing": "npm run typecheck --workspace=@cashflow/clearing",
     "audit:prod": "node scripts/audit-prod.mjs",
-    "verify": "npm run lint && npm run test && npm run build",
+    "verify": "npm run lint && npm run typecheck:clearing && npm run test && npm run build",
     "build:render": "npm run db:generate --workspace=apps/server && npm run db:migrate:deploy --workspace=apps/server && npm run build:server",
     "db:push": "npm run db:push --workspace=apps/server",
     "db:migrate": "npm run db:migrate --workspace=apps/server",
