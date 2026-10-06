@@ -7,7 +7,7 @@
 [![CI](https://github.com/SanishKumar/Cashflow/actions/workflows/ci.yml/badge.svg)](https://github.com/SanishKumar/Cashflow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-09352e.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-20%2B-00650e.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-231%20passing-85c093.svg)](#verifying-the-repository)
+[![Tests](https://img.shields.io/badge/tests-240%20passing-85c093.svg)](#verifying-the-repository)
 
 [Live demo](https://cashflow-phi-amber.vercel.app/) · [How it works](#how-it-works) · [When someone can't pay](#when-someone-cant-pay) · [The engine](#the-clearing-engine) · [Run it locally](#run-it-locally)
 
@@ -47,6 +47,7 @@ That table is the whole story for as long as everybody pays. [The section after 
 - **See what it costs.** Every mode reports how much cleared, how many payments remain, and exactly how many people would end up owing someone new.
 - **Ask what happens if someone can't pay.** Pick anyone on the graph and every mode shows who is left out of pocket — and flags anyone the plan exposed who wasn't exposed before.
 - **Instant.** The clearing engine runs in your browser, so switching modes never touches the server.
+- **Give the graph the screen.** Every panel folds away — the sheet on a phone, either column on a desk — and stays the way you left it.
 - **Scan a receipt.** Photograph a bill and the items, total, tax and tip are read off it — with an honest score for how much of that the parser could actually verify.
 
 Everything else you'd expect is there: groups with roles, an audit trail, realtime updates, CSV and PDF export, multi-currency.
@@ -272,7 +273,7 @@ The graph, both sample networks and every clearing mode work with only the secon
 npm run verify
 ```
 
-ESLint, a strict typecheck of the engine, all three test suites (server, web, clearing — 231 tests), the server TypeScript build and the production Vite build. CI runs the same command and audits production dependencies.
+ESLint, a strict typecheck of the engine, all three test suites (server, web, clearing — 240 tests), the server TypeScript build and the production Vite build. CI runs the same command and audits production dependencies.
 
 The three benchmarks are separate, because they measure rather than assert:
 

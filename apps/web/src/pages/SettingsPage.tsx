@@ -67,7 +67,7 @@ export function SettingsPage() {
           <section>
             <h3 className="text-section-title mb-4">About</h3>
             <div className="rounded-2xl border border-outline-variant/70 bg-surface-container p-5 shadow-[0_8px_20px_rgba(31,35,54,0.04)]">
-              <p className="text-[13px] leading-relaxed text-on-surface"><strong>CashFlow</strong> is an open-source group-expense tracker for trips, homes, and teams. It keeps the record understandable and gives the group a practical way to settle up.</p>
+              <p className="text-[13px] leading-relaxed text-on-surface"><strong>CashFlow</strong> is an open-source clearing engine with a shared-expense app built around it. It finds the debts in a group that cancel each other out, shows what each way of clearing them costs, and works out who is left exposed if someone cannot pay.</p>
             </div>
           </section>
         </div>
