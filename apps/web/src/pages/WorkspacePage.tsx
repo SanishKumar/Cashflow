@@ -14,52 +14,48 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  buildGraph,
-  clear,
-  grossFloor,
-  grossTotal,
-  netPositions,
-  type ClearingMode,
-  type Obligation,
-} from "@cashflow/clearing";
+import type { Obligation } from "@cashflow/clearing";
 import { groupApi, obligationApi } from "../lib/api";
+import { analyse, fatesUnder, type ViewMode } from "../lib/plans";
+import { PEOPLE, SAMPLES, type Nouns } from "../lib/samples";
 import { useUser } from "../contexts/UserContext";
 import type { Group } from "../types/index";
-import { MoneyGraph, type GraphObligation, type GraphParty } from "../components/MoneyGraph";
+import { EnginePanel } from "../components/EnginePanel";
+import { LedgerPanel } from "../components/LedgerPanel";
+import {
+  MoneyGraph,
+  type GraphObligation,
+  type GraphParty,
+  type StageInset,
+} from "../components/MoneyGraph";
 
-type ViewMode = "original" | ClearingMode;
 type Sheet = "ledger" | "engine";
 
-interface Stats {
-  grossBefore: number;
-  grossAfter: number;
-  cleared: number;
-  grossFloor: number;
-  obligationsBefore: number;
-  obligationsAfter: number;
-  newPairs: string[];
+/** Which network is on the stage: one of the user's groups, or a sample. */
+type Source = { kind: "group"; id: string } | { kind: "sample"; id: string };
+
+interface Stage {
+  obligations: Obligation[];
+  currency: string;
+  nouns: Nouns;
+  cash?: Map<string, number>;
+  lanes?: Map<string, number>;
+  laneLabels?: string[];
 }
 
-/** Shown before sign-in so the front door is the product, not a login form. */
-const SAMPLE: Obligation[] = [
-  { from: "Priya", to: "Rahul", amount: 120_000 },
-  { from: "Rahul", to: "Sam", amount: 90_000 },
-  { from: "Sam", to: "Priya", amount: 70_000 },
-  { from: "Dev", to: "Priya", amount: 45_000 },
-  { from: "Sam", to: "Dev", amount: 30_000 },
-  { from: "Rahul", to: "Dev", amount: 60_000 },
-  { from: "Nina", to: "Sam", amount: 25_000 },
-  { from: "Dev", to: "Nina", amount: 40_000 },
-];
-
 const NO_OBLIGATIONS: Obligation[] = [];
+const NO_SHOCKS: ReadonlySet<string> = new Set();
 
-const MODES = [
-  { id: "original", label: "As owed", hint: "Every IOU as it stands" },
-  { id: "cycles", label: "Cancel loops", hint: "Safe — nobody gains a counterparty" },
+const MODES: Array<{ id: ViewMode; label: string; hint: string }> = [
+  { id: "original", label: "As owed", hint: "Every debt as it stands" },
+  { id: "cycles", label: "Cancel loops", hint: "Cancels the most. Nobody gains a counterparty" },
   { id: "paths", label: "Simplify all", hint: "Fewest payments, may add strangers" },
-] as const;
+  {
+    id: "solvent",
+    label: "Keep solvent",
+    hint: "Cancels only what leaves the most parties able to pay",
+  },
+];
 
 interface ObligationResponse {
   obligations: Array<{ from: string; to: string; amount: number }>;
@@ -97,11 +93,24 @@ function useMoney(currency: string) {
   }, [currency]);
 }
 
+/** Tracks a media query, so the stage knows which panels are floating over it. */
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = (): void => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
+}
+
 export function WorkspacePage() {
   const { currentUserId, currentUser } = useUser();
 
   const [groups, setGroups] = useState<Group[]>([]);
-  const [groupId, setGroupId] = useState<string | null>(null);
+  const [source, setSource] = useState<Source>({ kind: "sample", id: SAMPLES[0]!.id });
   const [remote, setRemote] = useState<Obligation[] | null>(null);
   const [loading, setLoading] = useState(false);
   // Obligations per group. Switching back to a group already seen should be
@@ -110,6 +119,11 @@ export function WorkspacePage() {
   const [view, setView] = useState<ViewMode>("original");
   const [selected, setSelected] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>("engine");
+  const [shocked, setShocked] = useState<ReadonlySet<string>>(NO_SHOCKS);
+  const [replay, setReplay] = useState(0);
+
+  const wide = useMedia("(min-width: 1024px)");
+  const widest = useMedia("(min-width: 1280px)");
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -121,7 +135,12 @@ export function WorkspacePage() {
       .then((list) => {
         if (!active) return;
         setGroups(list);
-        if (list.length > 0) setGroupId((current) => current ?? list[0]!.id);
+        // Someone with groups came for their own money, not the sample.
+        if (list.length > 0) {
+          setSource((current) =>
+            current.kind === "group" ? current : { kind: "group", id: list[0]!.id }
+          );
+        }
 
         // Warm the other groups only once the selected one has had a clear
         // run at the network. Firing all of them at once made the group you
@@ -150,9 +169,12 @@ export function WorkspacePage() {
     };
   }, [currentUserId]);
 
+  const groupId = source.kind === "group" ? source.id : null;
+
   useEffect(() => {
     if (!groupId) {
       setRemote(null);
+      setLoading(false);
       return;
     }
 
@@ -164,6 +186,7 @@ export function WorkspacePage() {
       setRemote(cached);
       setLoading(false);
     } else {
+      setRemote(null);
       setLoading(true);
     }
 
@@ -187,58 +210,59 @@ export function WorkspacePage() {
   }, [groupId]);
 
   const group = groups.find((item) => item.id === groupId);
-  const isSample = !currentUserId;
-  const obligations = isSample ? SAMPLE : remote ?? NO_OBLIGATIONS;
-  const money = useMoney(isSample ? "INR" : group?.currency ?? "USD");
 
-  const analysis = useMemo(() => {
-    const graph = buildGraph(obligations);
-    const nets = netPositions(graph);
-    const parties: GraphParty[] = graph.nodes.map((label, index) => ({
-      id: label,
-      label,
-      net: nets[index] ?? 0,
-    }));
-
-    const before = pairsOf(obligations);
+  const stage = useMemo<Stage>(() => {
+    if (source.kind === "sample") {
+      const sample = SAMPLES.find((item) => item.id === source.id) ?? SAMPLES[0]!;
+      return sample;
+    }
     return {
-      parties,
-      before,
-      gross: grossTotal(graph),
-      floor: grossFloor(graph),
-      count: before.size,
+      obligations: remote ?? NO_OBLIGATIONS,
+      currency: group?.currency ?? "USD",
+      nouns: PEOPLE,
     };
-  }, [obligations]);
+  }, [source, remote, group?.currency]);
 
-  const active = useMemo(
-    () => (view === "original" ? null : clear(obligations, { mode: view, preferExistingPairs: true })),
-    [obligations, view]
+  const money = useMoney(stage.currency);
+  const hasCash = stage.cash !== undefined;
+
+  // A different network is a different question: nobody on the new one has
+  // been knocked over, and it may not have the balance sheets a mode needs.
+  const pick = useCallback((next: Source): void => {
+    setSource(next);
+    setShocked(NO_SHOCKS);
+    setSelected(null);
+  }, []);
+
+  const mode: ViewMode = view === "solvent" && !hasCash ? "cycles" : view;
+
+  const analysis = useMemo(
+    () => analyse(stage.obligations, stage.cash, shocked),
+    [stage.obligations, stage.cash, shocked]
+  );
+  const plan = analysis.plans[mode] ?? analysis.plans.original!;
+  const fates = useMemo(() => fatesUnder(analysis, mode), [analysis, mode]);
+
+  const parties = useMemo<GraphParty[]>(
+    () =>
+      analysis.parties.map(({ id, net }) => {
+        const fate = fates.get(id);
+        return {
+          id,
+          label: id,
+          net,
+          lane: stage.lanes?.get(id),
+          fate: fate
+            ? { failed: fate.failed, wave: fate.wave, saved: fate.saved, sunk: fate.sunk }
+            : undefined,
+        };
+      }),
+    [analysis.parties, fates, stage.lanes]
   );
 
-  // Metric surface shared by both states, so the panel does not care whether a
-  // solve actually ran.
-  const stats: Stats = active
-    ? active.metrics
-    : {
-        grossBefore: analysis.gross,
-        grossAfter: analysis.gross,
-        cleared: 0,
-        grossFloor: analysis.floor,
-        obligationsBefore: analysis.count,
-        obligationsAfter: analysis.count,
-        newPairs: [],
-      };
-
   const graphObligations = useMemo<GraphObligation[]>(() => {
-    const { before } = analysis;
-    if (!active) {
-      return [...before].map(([key, amount]) => {
-        const [from, to] = key.split("|") as [string, string];
-        return { from, to, amount, state: "live" as const };
-      });
-    }
-
-    const after = pairsOf(active.remaining);
+    const before = pairsOf(analysis.plans.original!.remaining);
+    const after = pairsOf(plan.remaining);
     const keys = new Set([...before.keys(), ...after.keys()]);
 
     return [...keys].map((key) => {
@@ -246,53 +270,107 @@ export function WorkspacePage() {
       const was = before.get(key) ?? 0;
       const now = after.get(key) ?? 0;
       const state: GraphObligation["state"] =
-        was === 0 ? "new" : now === 0 ? "cleared" : now < was ? "reduced" : "live";
-      return { from, to, amount: now || was, state };
+        mode === "original"
+          ? "live"
+          : was === 0
+            ? "new"
+            : now === 0
+              ? "cleared"
+              : now < was
+                ? "reduced"
+                : "live";
+      return { from, to, amount: now || was, state, unpaid: fates.get(from)?.unpaid ?? 0 };
     });
-  }, [analysis, active]);
+  }, [analysis.plans.original, plan.remaining, mode, fates]);
 
-  const plan = useMemo(
-    () => [...(active ? active.remaining : obligations)].sort((a, b) => b.amount - a.amount),
-    [active, obligations]
-  );
+  const toggleShock = useCallback((party: string): void => {
+    setShocked((current) => {
+      const next = new Set(current);
+      if (next.has(party)) next.delete(party);
+      else next.add(party);
+      return next;
+    });
+  }, []);
 
   // True only before the first response for the selected group arrives.
-  const pending = loading && remote === null;
-  const myName = currentUser?.name;
+  const pending = loading && remote === null && source.kind === "group";
+  const myName = source.kind === "group" ? currentUser?.name : undefined;
   const handleSelect = useCallback((id: string | null) => setSelected(id), []);
   const hasData = analysis.parties.length > 0;
 
+  // Room the floating panels take from the stage, so nothing is laid out
+  // underneath them.
+  const inset = useMemo<StageInset>(
+    () =>
+      wide
+        ? { top: 92, left: 276, right: widest ? 328 : 16, bottom: 76 }
+        : { top: 54, left: 8, right: 8, bottom: 8 },
+    [wide, widest]
+  );
+
   const ledger = (
     <LedgerPanel
-      parties={analysis.parties}
+      parties={parties}
+      fates={fates}
       selected={selected}
       onSelect={setSelected}
       money={money}
       myName={myName}
-      count={stats.obligationsBefore}
+      count={analysis.payments}
       pending={pending}
+      nouns={stage.nouns}
     />
   );
 
   const engine = (
-    <EnginePanel view={view} stats={stats} plan={plan} money={money} myName={myName} pending={pending} />
+    <EnginePanel
+      view={mode}
+      plan={plan}
+      analysis={analysis}
+      fates={fates}
+      money={money}
+      myName={myName}
+      pending={pending}
+      nouns={stage.nouns}
+      selected={selected}
+      shocked={shocked}
+      onToggleShock={toggleShock}
+      onReplay={() => setReplay((count) => count + 1)}
+      hasCash={hasCash}
+    />
   );
 
+  const modes = MODES.filter((option) => option.id !== "solvent" || hasCash);
+
   const modeSwitch = (
-    <div className="flex items-center gap-1.5">
-      {MODES.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          onClick={() => setView(option.id)}
-          title={option.hint}
-          className={`chip flex-1 justify-center whitespace-nowrap lg:flex-none ${
-            view === option.id ? "chip-active" : ""
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
+    <div className={`grid gap-1.5 lg:flex lg:items-center ${modes.length > 3 ? "grid-cols-2" : "grid-cols-3"}`}>
+      {modes.map((option) => {
+        const failing = analysis.plans[option.id]?.outcome?.failed.length;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => setView(option.id)}
+            title={option.hint}
+            className={`chip justify-center whitespace-nowrap ${
+              mode === option.id ? "chip-active" : ""
+            }`}
+          >
+            {option.label}
+            {/* How many cannot pay under each plan, so the comparison is on
+                the control that makes it. */}
+            {hasCash && failing !== undefined && (
+              <span
+                className={`font-mono text-[11px] tabular-nums tracking-normal ${
+                  mode === option.id ? "opacity-70" : "text-on-surface-variant"
+                }`}
+              >
+                {failing}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -301,37 +379,58 @@ export function WorkspacePage() {
       {/* ── Graph region ─────────────────────────────── */}
       <div className="relative min-h-0 flex-1">
         <MoneyGraph
-          parties={analysis.parties}
+          parties={parties}
           obligations={graphObligations}
           quiet={loading}
           selected={selected}
           onSelect={handleSelect}
+          laneLabels={stage.laneLabels}
+          inset={inset}
+          replay={replay}
           className="absolute inset-0"
         />
 
-        {/* Decorative, and it collides with the chip row on narrow screens. */}
-        <div className="pointer-events-none absolute inset-x-0 top-16 z-10 hidden justify-between px-5 lg:flex">
-          <span className="axis-label axis-label-soft">Tangled</span>
-          <span className="axis-label axis-label-soft">Cleared</span>
-        </div>
+        {/* Decorative, and it collides with the chip row on narrow screens.
+            A network with lanes labels its own axis instead. */}
+        {!stage.lanes && (
+          <div className="pointer-events-none absolute inset-x-0 top-16 z-10 hidden justify-between px-5 lg:flex">
+            <span className="axis-label axis-label-soft">Tangled</span>
+            <span className="axis-label axis-label-soft">Cleared</span>
+          </div>
+        )}
 
         {/* Which network is plotted */}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
           <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-1.5 no-scrollbar overflow-x-auto pb-1">
-            {currentUserId && groups.length > 0 ? (
+            {currentUserId &&
               groups.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setGroupId(item.id)}
-                  className={`chip shrink-0 ${item.id === groupId ? "chip-active" : ""}`}
+                  onClick={() => pick({ kind: "group", id: item.id })}
+                  className={`chip shrink-0 ${
+                    source.kind === "group" && item.id === source.id ? "chip-active" : ""
+                  }`}
                 >
                   {item.name}
                 </button>
-              ))
-            ) : (
-              <span className="chip pointer-events-none shrink-0">Sample</span>
-            )}
+              ))}
+
+            <span className="text-label shrink-0 px-1.5">
+              {currentUserId && groups.length > 0 ? "Samples" : "Sample"}
+            </span>
+            {SAMPLES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => pick({ kind: "sample", id: item.id })}
+                className={`chip shrink-0 ${
+                  source.kind === "sample" && item.id === source.id ? "chip-active" : ""
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
 
           {!currentUserId && (
@@ -365,7 +464,7 @@ export function WorkspacePage() {
           {(
             [
               { id: "engine", label: "Result" },
-              { id: "ledger", label: "People" },
+              { id: "ledger", label: stage.nouns.party[1] },
             ] as const
           ).map((tab) => (
             <button
@@ -386,7 +485,7 @@ export function WorkspacePage() {
         <div className="flex h-[36vh] min-h-[190px] flex-col overflow-hidden">
           {!hasData ? (
             <p className="px-4 py-8 text-center text-[12px] text-on-surface-variant">
-              Nothing outstanding here.
+              {pending ? "Loading obligations…" : "Nothing outstanding here."}
             </p>
           ) : sheet === "ledger" ? (
             ledger
@@ -395,185 +494,6 @@ export function WorkspacePage() {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ── Panels ─────────────────────────────────────── */
-
-function LedgerPanel({
-  parties,
-  selected,
-  onSelect,
-  money,
-  myName,
-  count,
-  pending,
-}: {
-  parties: GraphParty[];
-  selected: string | null;
-  onSelect: (id: string | null) => void;
-  money: (minorUnits: number) => string;
-  myName?: string;
-  count: number;
-  pending: boolean;
-}) {
-  return (
-    <>
-      <div className="hidden border-b border-outline-variant px-4 py-3 lg:block">
-        <p className="text-section-title">Ledger</p>
-        <p className="mt-1 text-[11px] text-on-surface-variant">
-          {pending ? "Loading" : `${parties.length} people · ${count} IOUs`}
-        </p>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {parties.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[11px] text-on-surface-variant">
-            {pending ? "Loading obligations…" : "Nothing outstanding here."}
-          </p>
-        ) : (
-          [...parties]
-            .sort((a, b) => b.net - a.net)
-            .map((party) => (
-              <button
-                key={party.id}
-                type="button"
-                onClick={() => onSelect(selected === party.id ? null : party.id)}
-                className={`flex w-full items-center justify-between gap-3 rounded-[4px] px-2 py-2 text-left transition-colors ${
-                  selected === party.id ? "bg-glass-hover" : ""
-                }`}
-              >
-                <span className="min-w-0 truncate text-[13px] text-on-surface">
-                  {party.id === myName ? "You" : party.label}
-                </span>
-                <span
-                  className={`text-data shrink-0 !text-[12px] ${
-                    party.net > 0
-                      ? "text-secondary"
-                      : party.net < 0
-                        ? "text-warning"
-                        : "text-neutral"
-                  }`}
-                >
-                  {party.net > 0 ? "+" : ""}
-                  {money(party.net)}
-                </span>
-              </button>
-            ))
-        )}
-      </div>
-
-      <p className="hidden border-t border-outline-variant px-4 py-3 text-[11px] leading-4 text-on-surface-variant lg:block">
-        A filled point is owed money. A hollow one owes it.
-      </p>
-    </>
-  );
-}
-
-function EnginePanel({
-  view,
-  stats,
-  plan,
-  money,
-  myName,
-  pending,
-}: {
-  view: ViewMode;
-  stats: Stats;
-  plan: Obligation[];
-  money: (minorUnits: number) => string;
-  myName?: string;
-  pending: boolean;
-}) {
-  return (
-    <>
-      <div className="border-b border-outline-variant px-4 py-3">
-        <p className="text-section-title hidden lg:block">Engine</p>
-        {pending ? (
-          <>
-            <p className="text-figure mt-2 text-[24px] !text-on-surface-variant">—</p>
-            <p className="mt-1 text-[11px] leading-4 text-on-surface-variant">
-              Reading this group&rsquo;s obligations…
-            </p>
-          </>
-        ) : view === "original" ? (
-          <>
-            <p className="text-figure mt-2 text-[24px]">{money(stats.grossBefore)}</p>
-            <p className="mt-1 text-[11px] leading-4 text-on-surface-variant">
-              owed in total. Some of it runs in circles.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="text-figure mt-2 text-[24px] !text-secondary">{money(stats.cleared)}</p>
-            <p className="mt-1 text-[11px] leading-4 text-on-surface-variant">
-              cancels out — nobody pays it. {money(stats.grossAfter)} left over{" "}
-              {stats.obligationsAfter} {stats.obligationsAfter === 1 ? "payment" : "payments"}.
-            </p>
-          </>
-        )}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {view !== "original" && (
-          <dl className="space-y-2 border-b border-outline-variant px-4 py-3">
-            <Stat
-              label="Payments"
-              value={`${stats.obligationsBefore} → ${stats.obligationsAfter}`}
-            />
-            <Stat
-              label="Owing a stranger"
-              value={stats.newPairs.length === 0 ? "Nobody" : `${stats.newPairs.length} people`}
-              tone={stats.newPairs.length === 0 ? "good" : "bad"}
-            />
-          </dl>
-        )}
-
-        <div className="px-4 py-3">
-          <p className="text-label mb-2">
-            {view === "original" ? "Who owes whom" : "Payments that settle it"}
-          </p>
-          <ul className="space-y-1">
-            {plan.slice(0, 60).map((item, index) => (
-              <li
-                key={`${item.from}|${item.to}|${index}`}
-                className={`flex items-baseline justify-between gap-2 rounded-[4px] px-1.5 py-1 text-[12px] ${
-                  item.from === myName || item.to === myName ? "bg-glass-hover" : ""
-                }`}
-              >
-                <span className="min-w-0 truncate text-on-surface">
-                  <span className="font-medium">{item.from === myName ? "You" : item.from}</span>
-                  <span className="text-on-surface-variant">
-                    {item.from === myName ? " pay " : " → "}
-                  </span>
-                  <span className="font-medium">{item.to === myName ? "you" : item.to}</span>
-                </span>
-                <span className="text-data shrink-0 !text-[11px]">{money(item.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  tone?: "neutral" | "good" | "bad";
-}) {
-  const toneClass =
-    tone === "good" ? "text-secondary" : tone === "bad" ? "text-error" : "text-on-surface";
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-[12px] text-on-surface-variant">{label}</dt>
-      <dd className={`text-[12px] font-medium tabular-nums ${toneClass}`}>{value}</dd>
     </div>
   );
 }
