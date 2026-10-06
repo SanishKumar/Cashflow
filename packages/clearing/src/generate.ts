@@ -46,11 +46,18 @@ export interface NetworkSpec {
    * genuine cycles come from in a hierarchical network.
    */
   backflow?: number;
+  /**
+   * Names a firm from its number and its tier. Defaults to `firm-N`. Lets a
+   * caller that is going to show the network label firms by where they sit in
+   * the chain.
+   */
+  label?: (firm: number, tier: number) => string;
 }
 
 export function generateNetwork(spec: NetworkSpec): Obligation[] {
   const random = makeRandom(spec.seed);
   const obligations: Obligation[] = [];
+  const label = spec.label ?? ((firm: number): string => `firm-${firm}`);
 
   // Preferential attachment: repeatedly drawing from this list favours firms
   // that already trade a lot, which is what produces hubs.
@@ -120,7 +127,11 @@ export function generateNetwork(spec: NetworkSpec): Obligation[] {
     const magnitude = Math.exp(random() * 7 + 4);
     const amount = Math.max(100, Math.round(magnitude * 100));
 
-    obligations.push({ from: `firm-${buyer}`, to: `firm-${supplier}`, amount });
+    obligations.push({
+      from: label(buyer, tierOf[buyer]!),
+      to: label(supplier, tierOf[supplier]!),
+      amount,
+    });
 
     // Busy firms get drawn more often from here on.
     draw.push(supplier, buyer);
