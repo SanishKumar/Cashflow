@@ -17,7 +17,7 @@ Use a [private GitHub security advisory](https://github.com/SanishKumar/Cashflow
 - API identity comes only from a verified bearer token; client-supplied user IDs are not accepted as authentication.
 - User endpoints are self-scoped. Group data, exports, audit history, payment actions, and Socket.io rooms all check group membership and role.
 - Admin, member, and read-only auditor permissions are enforced on the server.
-- Login/registration and receipt scanning use shared Redis-backed rate limits that fail closed when the store is unavailable. The general API limiter is availability-oriented and can fail open.
+- Every API route is rate limited, with tighter limits on login/registration and receipt scanning. Counts are kept in Redis so a limit holds across instances. If Redis is unreachable the same limits are enforced from each instance's memory instead, so a cache outage neither locks everyone out of signing in nor leaves any route unlimited.
 - Helmet security headers, exact-origin CORS, structured validation, parameterized Prisma queries, and non-cached API responses are enabled.
 - Receipt uploads are memory-only, limited to one 5 MB image, and checked against both declared MIME type and file signature.
 - Financial values are stored as fixed-point PostgreSQL decimals; settlement decisions are made in integer cents.
@@ -33,6 +33,7 @@ These are not hidden behind a “production ready” claim:
 - Email verification, password reset, multi-factor authentication, recovery codes, and suspicious-login alerts are not implemented.
 - There is no self-service account deletion or complete personal-data export yet.
 - Exact-email lookup for invitations tells an authenticated user whether that address has a CashFlow account.
+- While Redis is unreachable, rate limits are per instance rather than shared, and counts are lost on a restart. On more than one instance a client gets each allowance once per instance until Redis returns.
 - The public deployment depends on Vercel, Render, the configured PostgreSQL provider, Upstash Redis, and optionally OCR.space. Their security and availability are outside this repository.
 - Receipt OCR is not suitable for confidential receipts. With consent, the image is tried against OCR.space before a local OCR fallback.
 - Dependency review, key rotation, backup testing, log-retention limits, incident response, and restore drills remain operational responsibilities.
