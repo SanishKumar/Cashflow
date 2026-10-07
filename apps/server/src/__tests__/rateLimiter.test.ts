@@ -237,6 +237,27 @@ describe("limiters when the Redis host is gone", () => {
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
+  it("does not write a line per request while a connected Redis keeps failing", async () => {
+    const { apiLimiter } = await import("../middleware/rateLimiter.js");
+    const client = clients[0];
+    client.status = "ready";
+    client.emit("ready");
+
+    const app = express();
+    app.use(apiLimiter);
+    app.get("/", (_req, res) => {
+      res.json({ ok: true });
+    });
+
+    const seen: number[] = [];
+    for (let i = 0; i < 6; i += 1) seen.push((await request(app).get("/")).status);
+
+    expect(seen).toEqual(Array(6).fill(200));
+    expect(client.call).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain("Redis command failed");
+  });
+
   it("counts in memory without a connection when no Redis is configured", async () => {
     delete process.env.REDIS_URL;
     const { apiLimiter } = await import("../middleware/rateLimiter.js");

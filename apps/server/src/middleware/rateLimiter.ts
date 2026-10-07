@@ -65,10 +65,18 @@ function connect(): SharedCounter | null {
 
 const redis = connect();
 
+// A Redis that is connected but failing fails on every request, so this is
+// reported at most twice a minute rather than once per request.
+let lastFailureReport = 0;
+
 function storeFor(prefix: string): FallbackStore {
   return new FallbackStore(redis, prefix, (error) => {
+    const now = Date.now();
+    if (now - lastFailureReport < 30000) return;
+    lastFailureReport = now;
+
     const reason = error instanceof Error ? error.message : String(error);
-    console.warn(`[RATE LIMITER] ${prefix} counted in memory after a Redis error: ${reason}`);
+    console.warn(`[RATE LIMITER] Redis command failed (${reason}). Counting in memory meanwhile.`);
   });
 }
 
