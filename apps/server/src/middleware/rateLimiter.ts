@@ -1,6 +1,6 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
-import RedisStore from "rate-limit-redis";
 import Redis from "ioredis";
+import { FallbackStore, type SharedCounter } from "../lib/rateLimitStore.js";
 
 const nodeEnv = process.env.NODE_ENV || "development";
 const isProduction = nodeEnv === "production";
@@ -9,33 +9,67 @@ const useRedisRateLimitStore = isProduction || process.env.RATE_LIMIT_REDIS === 
 // Reuse the Redis connection URL logic
 const redisUrl = process.env.UPSTASH_REDIS_REST_URL
   ? process.env.UPSTASH_REDIS_REST_URL.replace("https", "rediss")
-  : process.env.REDIS_URL || "redis://localhost:6379";
+  : process.env.REDIS_URL;
 
-const connectionOptions = {
-  // Let Node verify the Redis provider's certificate chain.
-  tls: redisUrl.startsWith("rediss") ? {} : undefined,
-  maxRetriesPerRequest: 3,
-};
+/**
+ * The limiter's own Redis connection, or null when there is nothing to
+ * connect to. Limits are then counted in memory, per instance.
+ */
+function connect(): SharedCounter | null {
+  if (!useRedisRateLimitStore) return null;
 
-// Create a dedicated Redis client for the rate limiter
-const redisClient = useRedisRateLimitStore ? new Redis(redisUrl, connectionOptions) : null;
+  if (!redisUrl) {
+    console.warn("[RATE LIMITER] REDIS_URL is not set. Limits are counted in memory, per instance.");
+    return null;
+  }
 
-// Prevent crashing if Redis goes down — rate limiting will just be bypassed
-redisClient?.on("error", (err) => {
-  console.warn("[RATE LIMITER] Redis connection error:", err.message);
-});
+  const client = new Redis(redisUrl, {
+    // Let Node verify the Redis provider's certificate chain.
+    tls: redisUrl.startsWith("rediss") ? {} : undefined,
+    // A limiter must never hold a request up. With the queue on, a command
+    // sent while disconnected waits out several reconnection attempts before
+    // it fails, and every API call waited with it.
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+    commandTimeout: 2000,
+    connectTimeout: 10000,
+    // Keep trying for as long as it takes, so limits are shared again without
+    // a restart, but not more often than twice a minute.
+    retryStrategy: (attempt) => Math.min(attempt * 1000, 30000),
+  });
 
-function redisStoreOptions(prefix: string) {
-  if (!redisClient) return {};
-  const client = redisClient;
+  // ioredis reports every failed attempt. One line when Redis goes and one
+  // when it comes back is what an operator needs; a line a second is not.
+  let state: "unknown" | "up" | "down" = "unknown";
+
+  const down = (reason: string): void => {
+    if (state === "down") return;
+    state = "down";
+    console.warn(
+      `[RATE LIMITER] Redis unavailable (${reason}). Counting in memory, per instance, until it returns.`
+    );
+  };
+
+  client.on("ready", () => {
+    if (state !== "up") console.log("[RATE LIMITER] Redis connected. Limits are shared across instances.");
+    state = "up";
+  });
+  client.on("error", (error) => down(error.message));
+  client.on("end", () => down("connection closed"));
 
   return {
-    store: new RedisStore({
-      prefix,
-      // @ts-expect-error - Known typing mismatch between rate-limit-redis and ioredis, but it works
-      sendCommand: (...args: string[]) => client.call(...args),
-    }),
+    ready: () => client.status === "ready",
+    call: (...args: string[]) => client.call(args[0]!, ...args.slice(1)),
   };
+}
+
+const redis = connect();
+
+function storeFor(prefix: string): FallbackStore {
+  return new FallbackStore(redis, prefix, (error) => {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[RATE LIMITER] ${prefix} counted in memory after a Redis error: ${reason}`);
+  });
 }
 
 /**
@@ -48,7 +82,7 @@ export const apiLimiter = rateLimit({
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   passOnStoreError: true,
-  ...redisStoreOptions("rl:api:"),
+  store: storeFor("rl:api:"),
   message: {
     success: false,
     error: "Too many requests from this IP, please try again after 15 minutes",
@@ -67,9 +101,11 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  // Authentication fails closed if the shared limiter store is unavailable.
+  // Losing Redis moves the count into memory rather than stopping it, so this
+  // only bites if counting fails altogether. Then authentication is refused:
+  // an unlimited login endpoint is worse than an unavailable one.
   passOnStoreError: false,
-  ...redisStoreOptions("rl:auth:"),
+  store: storeFor("rl:auth:"),
   message: {
     success: false,
     error: "Too many authentication attempts, please try again later",
@@ -100,7 +136,7 @@ export const receiptScanLimiter = rateLimit({
   keyGenerator: (req) => `receipt:${req.userId || (req.ip ? ipKeyGenerator(req.ip) : "unknown-ip")}`,
   skip: (req) => isPremiumReceiptUser(req.userId),
   passOnStoreError: false,
-  ...redisStoreOptions("rl:receipt-scan:"),
+  store: storeFor("rl:receipt-scan:"),
   message: {
     success: false,
     error: "Free accounts can scan up to 20 receipts per hour. Please try again later.",
